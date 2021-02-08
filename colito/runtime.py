@@ -3,9 +3,15 @@ Created on Feb 1, 2021
 
 @author: janis
 '''
-import datetime
-from . import property_eval_once
+from datetime import datetime
 import os
+
+from .summarisable import SummarisableAsDict
+from .logging import getModuleLogger
+
+from . import property_eval_once
+
+log = getModuleLogger(__name__)
 
 class RuntimeEnvironment(SummarisableAsDict):
     _fields = ('date', 'hostname', 'username', 'pid', 'cwd', 'cpu_count', 'git_version')
@@ -62,6 +68,6 @@ class RuntimeEnvironment(SummarisableAsDict):
         except Exception as e:
             return f'error-{e[0]}'
     
-    def summary_dict(self, options: SummaryOptions):
+    def summary_dict(self, options):
         return self.summary_from_fields(self._fields)
 

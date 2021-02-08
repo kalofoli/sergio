@@ -14,12 +14,13 @@ from itertools import chain, islice, repeat
 from numpy import ndarray, ones, stack, where, argmin, cumprod, zeros, arange
 import numpy as np
 
-from sdcore.predicates import Predicate
-from sdcore.data import GraphData
-from sdcore.utils import Cache, property_predicate_objects, as_predicate_objects, \
-    Indexer, ClassCollection
-from sdcore.language.utils import EffectiveValiditiesTracker, EffectiveValiditiesView, CandidateRestriction, Indices
-from sdcore.summarisable import Summarisable, SummaryOptions, SummaryParts
+from colito.cache import ValueCache as Cache
+from colito.indexing import Indexer, ClassCollection
+from colito.summarisable import Summarisable, SummaryOptions, SummaryParts,\
+    SummarisableList
+from colito.logging import getModuleLogger
+from .utils import EffectiveValiditiesTracker, EffectiveValiditiesView, CandidateRestriction, Indices
+from ..predicates import Predicate
 
 PredicateCollectionType = Iterable[Predicate]  # pylint: disable=invalid-name
 PredicateOrIndexType = Union[Predicate, int]  # pylint: disable=invalid-name
@@ -29,8 +30,27 @@ CacheSpecType = Union[bool, Cache, Dict]
 SelectorType = TypeVar('SelectorType')
 LanguageType = TypeVar('LanguageType')
 
-from sdcore.logging import getLogger
-log = getLogger(__name__.split('.')[-1])
+log = getModuleLogger(__name__)
+
+
+def property_predicate_objects(index_producer: Callable[..., Tuple[int, ...]]):
+    predicate_producer = as_predicate_objects(index_producer)
+    return property(predicate_producer)
+
+        
+def as_predicate_objects(index_producer: Callable[..., Tuple[int, ...]]) -> Callable[..., Tuple['Predicate', ...]]:
+
+    def predicate_producer(self, *args, **kwargs) -> Tuple['Predicate', ...]:
+        predicate_indices = index_producer(self, *args, **kwargs)
+        if predicate_indices is None:
+            predicate_objects = None
+        else:
+            predicate_objects = tuple(self.language.predicate_objects(predicate_indices))
+        return predicate_objects
+
+    return predicate_producer
+
+
 
 class SelectorParserBase(Generic[SelectorType, LanguageType]):
     '''A parser of subgroups of a given language'''
@@ -95,7 +115,7 @@ class StaticSelector(Selector[LanguageType]):
 class Language(Generic[SelectorType]):
     '''Language of selectors'''
 
-    def __init__(self, data: GraphData) -> None:
+    def __init__(self, data) -> None:
         self._data = data
 
     @property
@@ -104,7 +124,7 @@ class Language(Generic[SelectorType]):
         raise NotImplementedError()
 
     @property
-    def data(self) -> GraphData:
+    def data(self):
         '''Data on which the language operates'''
         return self._data
 
@@ -224,7 +244,7 @@ class ConjunctionLanguage(Summarisable, Language):
     '''Language of predicate conjunctions'''
     tag = 'conjunctions'
 
-    def __init__(self, data: GraphData, predicates: Optional[PredicateOrIndexCollectionType]=None) -> None:
+    def __init__(self, data, predicates: Optional[PredicateOrIndexCollectionType]=None) -> None:
         super(ConjunctionLanguage, self).__init__(data=data)
         self._data = data
         if predicates is None:
@@ -368,7 +388,7 @@ class ConjunctionLanguage(Summarisable, Language):
     def summary_dict(self, options:SummaryOptions):
         dct = {'data-name': self.data.name, 'num-predicates':len(self.predicates)}
         if options.parts & SummaryParts.LANGUAGE_PREDICATES:
-            dct['predicates'] = Summarisable.List(self.predicates)
+            dct['predicates'] = SummarisableList(self.predicates)
         return dct
     
 class ClosureConjunctionSelector(ConjunctionSelector, Selector['ClosureConjunctionLanguageBase']):
@@ -493,7 +513,7 @@ class ClosureConjunctionSelector(ConjunctionSelector, Selector['ClosureConjuncti
 
 class ClosureConjunctionLanguageBase(ConjunctionLanguage):
 
-    def __init__(self, data: GraphData, predicates: Optional[PredicateCollectionType]=None) -> None:
+    def __init__(self, data, predicates: Optional[PredicateCollectionType]=None) -> None:
         super(ClosureConjunctionLanguageBase, self).__init__(data=data, predicates=predicates)
         self._predicate_validities: ndarray = np.array(stack((predicate.validate() for predicate in self.predicates), axis=1), order='F')
         self._root: ClosureConjunctionSelector = ClosureConjunctionSelector(self, [])
@@ -583,7 +603,6 @@ class ClosureConjunctionLanguageBase(ConjunctionLanguage):
     def deserialise_selector(self, digest):
         return ClosureConjunctionSelector.deserialise(self, digest)
 
-from sdcore.utils import print_array
 class ClosureConjunctionLanguageRestricted(ClosureConjunctionLanguageBase):
     tag = 'closure-conjunctions-restricted'
 

@@ -13,14 +13,12 @@ import operator
 from pandas.core.series import Series, isna, notna
 import numpy as np
 
-from sdcore.summarisable import SummaryOptions, Summarisable
-from sdcore.attributes import AttributeKind, Attribute, AttributeCategorical, AttributeNumerical, \
+from colito.summarisable import SummaryOptions, Summarisable
+from sergio.attributes import AttributeKind, Attribute, AttributeCategorical, AttributeNumerical, \
     AttributeBoolean
-from sdcore.discretisers import Discretiser, Interval, DEFAULT_DISCRETISER
-from sdcore.utils.resolvers import EnumResolver
+from sergio.discretisers import Discretiser, Interval, DEFAULT_DISCRETISER
+from colito.resolvers import make_enum_resolver
 
-if TYPE_CHECKING:
-    from sdcore.data import GraphData
 
 EntityIndexType = Union[slice, np.ndarray, Sequence[int]]
 
@@ -31,7 +29,7 @@ class PredicateKinds(enum.IntFlag):
     ALL = BOOLEAN|CATEGORICAL|RANGED
     NONE = 0
 
-PREDICATE_KINDS_RESOLVER = EnumResolver(PredicateKinds)
+PREDICATE_KINDS_RESOLVER = make_enum_resolver(PredicateKinds)
 
 class Predicate:
     '''A logical predicate mapping entities to a boolean'''

@@ -11,7 +11,7 @@ from pickle import UnpicklingError, load, dump
 from typing import Callable, Any, Optional, BinaryIO, Iterator
 
 
-class Cache:
+class FileCache:
     '''Cache loaded data using the pickle system'''
 
     def __init__(self, folder : str='cache') -> None:
@@ -99,4 +99,100 @@ class Cache:
         return data
 
 
-DEFAULT_CACHE = Cache()
+DEFAULT_FILE_CACHE = FileCache()
+
+class ValueCache(dict):
+    
+    class Attributes:
+
+        def __init__(self, cache: 'ValueCache') -> None:
+            dict.__setattr__(self, '_cache', cache)
+            self._cache: ValueCache = cache  # for pylint
+        
+        def __dir__(self):
+            dir_orig = super().__dir__()
+            return list(self._cache.keys()) + dir_orig
+        
+        def __repr__(self):
+            return f'<{self.__class__.__name__} with {len(self._cache)} key(s): {list(self._cache.keys())}>'
+        
+        def __setattr__(self, name, value):
+            if name in self.__dict__:
+                dict.__setattr__(self, name, value)
+            else:
+                self._cache[name] = value
+        
+        def __getattr__(self, name):
+            return self._cache[name]
+            
+        def __delattr__(self, name):
+            del self._cache[name]
+    
+    def __init__(self, *args, enabled=True, **kwargs):
+        self._enabled = enabled
+        super(ValueCache, self).__init__(*args, **kwargs)
+        self._attributes = ValueCache.Attributes(self)
+    
+    def __setitem__(self, *args, **kwargs):
+        if self._enabled:
+            super(ValueCache, self).__setitem__(*args, **kwargs)
+    
+    @property
+    def a(self):
+        return self._attributes
+    
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    @enabled.setter
+    def enabled(self, value):
+        self._enabled = value
+        
+    @classmethod
+    def from_spec(cls, spec):
+        if isinstance(spec, ValueCache):
+            return spec
+        elif isinstance(spec, bool):
+            return cls(enabled=spec)
+        elif isinstance(spec, dict):
+            return cls(spec)
+        elif spec is None:
+            return cls()
+        else:
+            raise RuntimeError('Cannot create cache. Specify either a cache, a dict or a bool')
+        
+    def __repr__(self):
+        return f'<{self.__class__.__name__}:{"E" if self.enabled else "D"} ' + super(ValueCache, self).__repr__() + '>'
+    
+    def get(self, key, other=None):
+        if self._enabled:
+            return super().get(key, other)
+        else:
+            return other
+
+    def __getitem__(self, key):
+        if self._enabled:
+            return super().__getitem__(key)
+        else:
+            raise KeyError(key)
+
+    @classmethod
+    def cached_property(cls, value_getter):
+        name = value_getter.__name__
+
+        def wrapped_getter(self):
+            enabled = self.cache.enabled
+            if enabled:
+                try:
+                    value = self.cache[name]
+                    return value
+                except KeyError:
+                    pass
+            value = value_getter(self)
+            if enabled:
+                self.cache[name] = value
+            return value
+
+        return property(wrapped_getter) 
+

@@ -6,16 +6,14 @@ Created on Aug 9, 2018
 
 import numpy as np
 from math import inf
-from typing import NamedTuple, Tuple, Optional, Sequence, List, Union, cast
-from collections import namedtuple, OrderedDict
+from typing import NamedTuple, Tuple, Optional, Sequence, List 
+from collections import namedtuple
 import enum
 
-import sdcore.utils.matlab as mtl
-from builtins import property, staticmethod
-from sdcore.summarisable import Summarisable, SummaryOptions
-import operator
-from _functools import reduce
-from sdcore.utils.resolvers import EnumResolver
+import colito.matlab as mtl
+
+from colito.summarisable import Summarisable, SummaryOptions
+from colito.resolvers import make_enum_resolver
 
 class Minimisers:
     class IntResult(NamedTuple):
@@ -92,8 +90,8 @@ class Interval(NamedTuple):
         return (self.lower, self.upper)
     
     def __repr__(self):
-        range = self.range
-        return f'{self.name}:{"[" if self.leq else "("}{range[0]},{range[1]}{"]" if self.ueq else ")"}'
+        rng = self.range
+        return f'{self.name}:{"[" if self.leq else "("}{rng[0]},{rng[1]}{"]" if self.ueq else ")"}'
 
 class DiscretiserRanges(enum.Flag):
     INTERVALS = enum.auto()
@@ -101,7 +99,7 @@ class DiscretiserRanges(enum.Flag):
     SLABS_NEGATIVE = enum.auto()
     SLABS = SLABS_NEGATIVE | SLABS_POSITIVE
 
-DISCRETISER_RANGE_RESOLVER = EnumResolver(DiscretiserRanges, allow_multiple=True, collapse_multipart=True)
+DISCRETISER_RANGE_RESOLVER = make_enum_resolver(DiscretiserRanges, allow_multiple=True, collapse_multipart=True)
 
 class Discretiser(Summarisable):
     
@@ -309,17 +307,3 @@ class DiscretiserUniform(Discretiser):
 
 DEFAULT_DISCRETISER = FrequencyDiscretiser(cut_count=5, ranges=DiscretiserRanges.SLABS_POSITIVE)
 
-
-if __name__ == '__main__':
-    disc = FrequencyDiscretiser(cut_count=4)
-    from sdcore.datasets import DatasetConfigurations
-    dc = DatasetConfigurations()
-    gd = dc.load_amazon(category='movies', mode='num')
-    
-    data = gd.entities
-    values = data['ActionAdventure:General']
-    
-    res = disc.discretise(values)
-    print(res)
-    
-   

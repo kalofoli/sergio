@@ -211,16 +211,12 @@ class SergioLogger(LoggerAdapter):
     LOGGERS = dict()
     
     @classmethod
-    def getLogger(cls, *args, **kwargs) -> 'FinerLogger':  # pylint: disable = invalid-name
-        logger = logging.getLogger(*args, **kwargs)
-        if logger not in cls.LOGGERS:
-            cls.LOGGERS[logger] = FinerLogger(logger)
-        return cls.LOGGERS[logger]
-
-    @classmethod
     def default_format(cls):
         len_level = max(len(key) for key in _nameToLevel.keys())
-        len_name = max(len(logger.name) for logger in cls.LOGGERS.values())
+        if cls.LOGGERS:
+            len_name = max(len(logger.name) for logger in cls.LOGGERS.values())
+        else:
+            len_name = ''
         return f'%(levelname)-{len_level}s %(name)-{len_name}s %(asctime)s||%(message)s'
         
 DEFAULT_ADAPTER_FACTORY = None
@@ -242,3 +238,17 @@ def setAdapterFactory(adapter_factory=None):
     '''
     global DEFAULT_ADAPTER_FACTORY
     DEFAULT_ADAPTER_FACTORY = adapter_factory
+
+
+from typing import Callable, Any
+def to_stuple(what, sort:bool=False, join:str=None, formatter:Callable[[Any], str]=str):
+    out = tuple(map(formatter, what))
+    if sort:
+        if callable(sort):
+            key = sort
+        else:
+            key = None
+        out = tuple(sorted(out, key=key))
+    if join:
+        out = join.join(out)
+    return out

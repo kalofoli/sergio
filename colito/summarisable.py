@@ -5,18 +5,16 @@ Created on Jun 23, 2018
 '''
 
 from typing import NamedTuple, Dict, Any, List
-from enum import Flag, auto
 from collections import OrderedDict
+import enum
 from functools import reduce
 import operator
-import enum
 
 
-
-class SummaryParts(Flag):
+class SummaryParts(enum.Flag):
     BASIC = 0
-    UNCOMPRESSED_INDICES = auto()
-    COMPRESSED_INDICES = auto()
+    UNCOMPRESSED_INDICES = enum.auto()
+    COMPRESSED_INDICES = enum.auto()
     INDICES = COMPRESSED_INDICES
     
     @classmethod
@@ -48,7 +46,8 @@ class SummaryParts(Flag):
     @classmethod
     def members_desc(cls):
         return ','.join(f'{name}({e.value})' for name,e in cls.__members__.items()) 
-        
+
+
 class SummaryOptions(dict):
     def __init__(self, parts:SummaryParts, is_compact:bool, **kwargs):
         self.parts: SummaryParts
@@ -95,8 +94,8 @@ class Summarisable:
         '''Create a dict from given fields'''
         global ON_MISSING_RESOLVER
         if ON_MISSING_RESOLVER is None:
-            from cofi.utils.resolvers import EnumResolver
-            ON_MISSING_RESOLVER = EnumResolver(OnMissing)
+            from colito.resolvers import make_enum_resolver
+            ON_MISSING_RESOLVER = make_enum_resolver(OnMissing)
         missing = ON_MISSING_RESOLVER.resolve(missing)
         if instance is None:
             instance = self

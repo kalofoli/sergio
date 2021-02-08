@@ -983,7 +983,7 @@ class AttributeHeader(Symbol):
         return dtype     
 
 
-        
+
 class MetaDataParser(DataSymbol):
     rex_rel = re.compile('@relation\s')
     class ColumnHeader(DataSymbol):

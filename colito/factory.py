@@ -3,7 +3,8 @@ Created on Jun 21, 2018
 
 @author: janis
 '''
-from typing import Callable, List, NamedTuple, Any, Dict, Sequence, Tuple, cast
+from typing import Callable, List, NamedTuple, Any, Dict, Sequence, Tuple, cast,\
+    Union
 from collections import OrderedDict
 import inspect
 import re
@@ -12,7 +13,7 @@ from recordclass import RecordClass
 
 # pylint: disable= bad-mcs-classmethod-argument, too-few-public-methods
 
-from cofi.summarisable import SummarisableAsDict, SummaryOptions
+from colito.summarisable import SummarisableAsDict, SummaryOptions
 import functools
 
 

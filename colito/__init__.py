@@ -30,3 +30,4 @@ class property_eval_once:
         value = func() if self._static else func(obj)
         setattr(obj, func.__name__, value)
         return value
+

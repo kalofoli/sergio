@@ -5,17 +5,16 @@ Created on May 3, 2018
 '''
 
 import json
+import enum
 
 from collections import OrderedDict, namedtuple
-from cofi.summarisable import Summarisable, SummaryParts, SummaryOptions,\
+from .summarisable import Summarisable, SummaryParts, SummaryOptions,\
     SummaryCompressible, DEFAULT_SUMMARY_OPTIONS, SummarisableDict,\
     SummarisableList, SummarisableAsDict, SummaryGroupable,\
     SummarisableAsList, CompressionToString, CompressionScheme
 # from cofi.factory import ProductBundle
-from cofi.logging import getModuleLogger
-import skopt
-import enum
-from cofi.utils.resolvers import EnumResolver
+from .logging import getModuleLogger
+from .resolvers import make_enum_resolver
 
 log = getModuleLogger(__name__)
 
@@ -86,7 +85,7 @@ class OnError(enum.Enum):
     SUMMARISE = enum.auto()
     RAISE = enum.auto()
     
-ON_ERROR_RESOLVER = EnumResolver(OnError)
+ON_ERROR_RESOLVER = make_enum_resolver(OnError)
 
 class Fields(OrderedDict):
     def __init__(self, name, pairs):
@@ -281,17 +280,19 @@ class FieldSummariser(Summariser):
         super().__init__(*args, **kwargs)
         self.add_visitor(FieldVisitor())
  
+try:
+    import skopt
+    class SearchSpaceSummaryVisitor(ClassSummaryVisitor):
+        __summary_class__ = skopt.space.Dimension
+        
+        @ifapplicable
+        def on_encounter(self, state:SummaryState):
+            fields = ('args','name','digest')
+            state.value = {field:state.value[field] for field in fields}
+except ImportError: pass
 
-class SearchSpaceSummaryVisitor(ClassSummaryVisitor):
-    __summary_class__ = skopt.space.Dimension
-    
-    @ifapplicable
-    def on_encounter(self, state:SummaryState):
-        fields = ('args','name','digest')
-        state.value = {field:state.value[field] for field in fields}
-
-COMPRESSION_SCHEME_RESOLVER = EnumResolver(CompressionScheme)
-COMPRESSION_STRINGIFY_RESOLVER = EnumResolver(CompressionToString)
+COMPRESSION_SCHEME_RESOLVER = make_enum_resolver(CompressionScheme)
+COMPRESSION_STRINGIFY_RESOLVER = make_enum_resolver(CompressionToString)
 
 class CompressedEntry(dict):
     def __init__(self, value, scheme:CompressionScheme='b64gzip', tostring:CompressionToString='auto', encoding = 'utf8'):
