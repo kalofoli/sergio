@@ -256,7 +256,7 @@ class FlagResolver(EnumResolver):
     
 
 def make_enum_resolver(cls, **kwargs):
-    if isinstance(cls, enum.Flag):
+    if issubclass(cls, enum.Flag):
         return FlagResolver(cls, **kwargs)
     else:
         return EnumResolver(cls, **kwargs)
