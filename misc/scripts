@@ -1,0 +1,25 @@
+
+
+function quick_eclipse_doctest() {
+	FILES=($@);
+	threshold=${threshold:-1}
+	function now() { date +%s; }
+	last=$(now)
+	inotifywait -me MODIFY  "${FILES[@]}" | while read file event; do 
+		cur=$(now)
+		if (( $cur-$last > $threshold )); then 
+			if grep 'doctest.testmod()' "$file" &>/dev/null ; then 
+				last=$( now )
+				date
+				module=$( echo "$file" | sed -e 's/\//./g;s/\.py$//')
+				echo "***************************************************************************"
+				echo "********************* Module: $module File: $file *************************"
+				python -m "$module"
+			else
+				echo -n "d"
+			fi
+		else
+			echo -n '.'
+		fi
+	 done
+}

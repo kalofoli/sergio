@@ -8,13 +8,14 @@ import argparse
 import traceback
 
 from colito.logging import getModuleLogger, setAdapterFactory, SergioLogger
+from sergio.predicates import DEFAULT_PREDICISER
 setAdapterFactory(SergioLogger)
 log = getModuleLogger(__name__)
 
 
 from colito.config import ActionParser
 
-from sergio.experiment import Experiment
+from sergio.computation import Computation
 from sergio.config import ExperimentActions
 
 
@@ -26,16 +27,19 @@ if __name__ == '__main__':
     log.add_stderr()
     log.setLevel('INFO')
 
-    from sergio.datasets.factory import DatasetFactory
-    data = DatasetFactory().load_dataset('twitter')
+    from sergio.data.factory import DatasetFactory
+    from sergio import FileManager
+    fm = FileManager(paths={'data':'../../data/'})
+    ds = DatasetFactory(file_manager=fm, cache=None).load_dataset('twitter')
+    preds = tuple(ds.make_predicates(DEFAULT_PREDICISER))
     
-    print('Hello World')
+    print(preds)
     
 if __name__ == 'z__main__':
     import sys
     log.add_stderr()
     
-    experiment = Experiment()
+    experiment = Computation()
     ap = argparse.ArgumentParser(prog=__package__)
     ap.add_argument('--dry-run', dest='dry_run', default=False, action='store_true',help='Do not perform any action. Just validate the inputs.')
     action_parser = ActionParser(__package__, experiment, parser=ap)

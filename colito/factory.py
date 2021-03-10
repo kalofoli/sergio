@@ -5,16 +5,15 @@ Created on Jun 21, 2018
 '''
 from typing import Callable, List, NamedTuple, Any, Dict, Sequence, Tuple, cast,\
     Union
-from collections import OrderedDict
 import inspect
 import re
 
-from recordclass import RecordClass
+import functools
 
 # pylint: disable= bad-mcs-classmethod-argument, too-few-public-methods
 
-from colito.summarisable import SummarisableAsDict, SummaryOptions
-import functools
+from .summaries import SummarisableFromFields
+from types import SimpleNamespace
 
 
 class ParsedArgument(NamedTuple):
@@ -24,29 +23,52 @@ class ParsedArgument(NamedTuple):
     text:str
 
 
-class ProductBundle(RecordClass):
-    factory_object: 'FactoryBase'
-    method_object: 'FactoryMethod'
-    callable: Callable
-    name: str
-    args: Dict[str, Any]
-    digest:str
-    product: Any
+try:
+    from recordclass import RecordClass
+    class ProductBundle(RecordClass):
+        factory_object: 'FactoryBase'
+        method_object: 'FactoryMethod'
+        functor: Callable
+        name: str
+        args: Dict[str, Any]
+        digest:str
+        product: Any
+        
+        def produce(self, obj=None):
+            product = self.functor(obj, **self.args) if obj is not None else self.functor(**self.args)
+            self.product = product
+            return product
+        
+        @property
+        def __summary_name__(self):
+            return self.name
     
-    def produce(self, obj=None):
-        product = self.callable(obj, **self.args) if obj is not None else self.callable(**self.args)
-        self.product = product
-        return product
     
-    def summary_dict(self, options:SummaryOptions):  # pylint: disable=unused-argument
-        return {'name':self.name, 'args': self.args, 'digest':self.digest, 'instance':self.product}
+    ProductBundle.__bases__ = ProductBundle.__bases__ + (SummarisableFromFields,)
+    ProductBundle.__summary_fields__ = ('name','args','digest','product')
+        
+except ImportError:
+    class ProductBundle(SimpleNamespace, SummarisableFromFields):
+        __summary_fields__ = ('name','args','digest','product')
+        def __init__(self, factory_object: 'FactoryBase', method_object: 'FactoryMethod',
+                     functor: Callable, name: str, args: Dict[str, Any], digest:str, product: Any):
+            self.factory_object: 'FactoryBase' = factory_object
+            self.method_object: 'FactoryMethod' = method_object
+            self.functor: Callable = functor
+            self.name: str = name
+            self.args: Dict[str, Any] = args
+            self.digest:str = digest
+            self.product: Any = product
+        
+        def produce(self, obj=None):
+            product = self.functor(obj, **self.args) if obj is not None else self.functor(**self.args)
+            self.product = product
+            return product
+        
+        @property
+        def __summary_name__(self):
+            return self.name
     
-    @property
-    def summary_name(self):
-        return self.name
-
-
-ProductBundle.__bases__ = ProductBundle.__bases__ + (SummarisableAsDict,)
 
 
 class TypeResolver:
@@ -59,6 +81,8 @@ class DefaultTypeResolver(TypeResolver):
     BOOL_FALSE = {'false', '0', 'off', 'no'}
 
     def resolve(self, cls, txt):
+        import enum
+        factory = cls
         if issubclass(cls, bool):
             if txt.lower() in self.BOOL_TRUE:
                 return True
@@ -66,7 +90,9 @@ class DefaultTypeResolver(TypeResolver):
                 return False
             else:
                 raise ValueError(f'Could not parse a boolean from {txt}.')
-        return cls(txt)
+        elif issubclass(cls, enum.Enum):
+            factory = cls.__getitem__
+        return factory(txt)
 
 
 DEFAULT_TYPE_RESOLVER = DefaultTypeResolver()
@@ -97,13 +123,13 @@ class FactoryMethod:
         self.method = method
         self.is_static = isinstance(method, staticmethod)
         self.is_class = isinstance(method, classmethod)
-        self.callable = method.__func__ if self.is_static or self.is_class else method
+        self.functor = method.__func__ if self.is_static or self.is_class else method
         if name is None:
-            name = self.callable.__name__
+            name = self.functor.__name__
         self.name = name
-        parameters = inspect.signature(self.callable).parameters  # Drop the self/cls parameter
-        self.name2argument = OrderedDict((argument.name, argument) for argument in parameters.values())
-        self.name2index = dict((argument.name, index) for index, argument in enumerate(parameters.values()))
+        parameters = inspect.signature(self.functor).parameters  # Drop the self/cls parameter
+        self.name2argument = {argument.name: argument for argument in parameters.values()}
+        self.name2index = {argument.name: index for index, argument in enumerate(parameters.values())}
         self.parameters = list(parameters.values())
         
     def assign_parameters_from_parsed_arguments(self, arguments:Sequence[ParsedArgument], obj=None, type_resolver:TypeResolver=DEFAULT_TYPE_RESOLVER, ignore_extra_arguments:bool=False) -> Tuple[List[Any], Dict[str, Any], Dict[str, Any]]:
@@ -133,7 +159,7 @@ class FactoryMethod:
         # Assign defaults
         args = [] if self.is_static else [obj]
         kwargs = {}
-        args_dct:Dict[str, Any] = OrderedDict()
+        args_dct:Dict[str, Any] = {}
         for index, assignment, parameter in zip(range(len(parameter_values)), parameter_values, parameters):
             if assignment is missing:
                 if parameter.default is inspect.Signature.empty:
@@ -156,11 +182,11 @@ class FactoryMethod:
         return args, kwargs, args_dct
     
     def __call__(self, obj, *args, **kwargs):
-        return self.callable(obj, *args, **kwargs)
+        return self.functor(obj, *args, **kwargs)
     
     def __repr__(self):
         type_txt = 'class ' if self.is_class else ('static ' if self.is_static else '')
-        return f'<{self.__class__.__name__} mapping "{self.name}" to {type_txt}method "{self.callable.__name__}">'
+        return f'<{self.__class__.__name__} mapping "{self.name}" to {type_txt}method "{self.functor.__name__}">'
     
     def make_caller(self):
         '''For use from the metaclass: make a function calling the sub-method directly'''
@@ -306,7 +332,7 @@ class FactoryGetter:
         args_txt = self.parameter_separator.join(f'{key}{self.key_value_separator}{value!r}' for key, value in args_merged.items())
         name = factory_method.name
         digest_txt = f'{name}{self.name_separator}{args_txt}' if args_txt else name
-        bundle = ProductBundle(factory_object=obj,method_object=factory_method, callable=factory_method.callable, name=factory_method.name, args=args_merged, digest=digest_txt, product=product)
+        bundle = ProductBundle(factory_object=obj,method_object=factory_method, functor=factory_method.functor, name=factory_method.name, args=args_merged, digest=digest_txt, product=product)
         return bundle
 
 class FactoryDescription:
@@ -318,7 +344,7 @@ class FactoryDescription:
         self._choice_separator = choice_separator
         
     def factory2str(self, factory:FactoryMethod) -> str:
-        func=factory.callable
+        func=factory.functor
         return self._choice_separator.join(map(str, tuple(inspect.signature(func).parameters.values())[1:])) 
         
     def describe(self, factories:Sequence[FactoryMethod]) -> str:

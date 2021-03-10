@@ -1,8 +1,8 @@
 
 import operator
-from typing import Dict, Callable, Sequence # pylint: disable=unused-import
-from .summarisable import SummarisableAsDict, SummaryOptions
-from collections import OrderedDict
+import typing
+
+from .summaries import SummarisableAsDict, SummaryOptions
 
 
 _template_counter = '''
@@ -117,8 +117,8 @@ class _StatisticsMeta(type):
     
     def __new__(cls, cls_name, bases, dct):
         cls_new = super(_StatisticsMeta, cls).__new__(cls, cls_name, bases, dct)
-        counters = OrderedDict(filter(lambda x:isinstance(x[1], StatisticsCounter), dct.items()))
-        updaters = OrderedDict(filter(lambda x:isinstance(x[1], StatisticsUpdater), dct.items()))
+        counters = dict(filter(lambda x:isinstance(x[1], StatisticsCounter), dct.items()))
+        updaters = dict(filter(lambda x:isinstance(x[1], StatisticsUpdater), dct.items()))
         # Make a property with just a getter
         cls._update_user_objects(cls_new, cls.counters_attr_name, counters)
         cls._update_user_objects(cls_new, cls.updaters_attr_name, updaters)
@@ -158,16 +158,16 @@ class _StatisticsMeta(type):
 
 
 class StatisticsBase(SummarisableAsDict, metaclass=_StatisticsMeta):
-    __statistics_counters__: Dict[str,StatisticsCounter] = ()
-    __statistics_updaters__: Dict[str, StatisticsUpdater] = ()
+    __statistics_counters__: typing.Dict[str,StatisticsCounter] = ()
+    __statistics_updaters__: typing.Dict[str, StatisticsUpdater] = ()
     
     def __repr__(self):
         text = ' '.join(map(lambda name:'{0}:{{0.{0}}}'.format(name).format(self), self.__statistics_counters__.keys()))
         return f'<{self.__class__.__name__}: {text}>'
     
     def reset(self):
-        cls: Type[StatisticsBase] = self.__class__
-        counters: Dict[str, StatisticsStatisticsCounter] = cls.__statistics_counters__
+        cls: typing.Type[StatisticsBase] = self.__class__
+        counters: typing.Dict[str, StatisticsCounter] = cls.__statistics_counters__
         for counter in counters.values():
             name_private = '_' + counter.name
             setattr(self, name_private, counter.initial_value)

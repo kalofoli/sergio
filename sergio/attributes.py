@@ -4,59 +4,43 @@ Created on Jan 19, 2018
 @author: janis
 '''
 
-from typing import TypeVar, Union, Container, Dict, cast, Optional, \
-    TYPE_CHECKING, Sequence, Type
-from enum import Enum
-from pandas import Series
-from builtins import property
+from typing import Dict, cast, Sequence, Type
+import enum
+from pandas import Series, DataFrame
 
-IndexType = TypeVar('IndexType', str, int)
-KindType = Union[str, 'AttributeKind']
-KindCollection = Union[Dict[IndexType, KindType], Container[KindType]]
-SelectionCollection = Union[Dict[IndexType, bool], Container[bool]]
-
-if TYPE_CHECKING:
-    from sdcore.data import GraphData
-
-
-class AttributeKind(Enum):
+class AttributeKind(enum.Enum):
     '''Attribute interpretation kind'''
-    NUMERICAL = 1
-    CATEGORICAL = 2
-    BOOLEAN = 3
-    INDEX = 4
-    NAME = 5
+    NUMERICAL = enum.auto()
+    CATEGORICAL = enum.auto()
+    BOOLEAN = enum.auto()
+    INDEX = enum.auto()
+    NAME = enum.auto()
 
 
-class AttributeFactory:
+class AttributeInfoFactory:
 
-    map_kind_to_class: Dict['AttributeKind', Type] = {}
+    __map_kind_to_class: Dict['AttributeKind', Type] = {}
+    
+    def __init__(self, data: DataFrame):
+        self._data = data
     
     @classmethod
-    def lookup_kind(cls, kind: KindType) -> "AttributeKind":
-        '''Lookup a given kind, possibly 'auto'.'''
+    def resolve_kind(cls, kind) -> "AttributeKind":
         if isinstance(kind, AttributeKind):
-            return cast(AttributeKind, kind)
+            return kind
         else:
-            kind_str = cast(str, kind).upper()
+            kind_str = kind.upper()
             if kind_str not in AttributeKind.__members__:
                 keys_str: str = ','.join(AttributeKind.__members__.keys())
-                raise KeyError(("No such AttributeKind: {0}. " + 
-                                "Choose one of: [{1}].")
-                                .format(kind, keys_str))
+                raise KeyError(f"Could not resolve kind {kind}. Choose one of: [{keys_str}].")
             return AttributeKind[kind_str]
 
-    @classmethod
-    def get_class_from_kind(cls, kind: KindType) -> Type:
-        kind_type: 'AttributeKind' = cls.lookup_kind(kind)
-        return cls.map_kind_to_class[kind_type]
-    
     PandasTypes = (({'int16', 'int32', 'int64', 'float64', 'float32'}, AttributeKind.NUMERICAL),
                    ({'bool'}, AttributeKind.BOOLEAN),
                    ({'category', 'object'}, AttributeKind.CATEGORICAL))
 
     @classmethod
-    def infer_kind_from_series(cls, series):
+    def _infer_kind(cls, series):
         '''Infer AttributeKind from series dtype.'''
         dtype = series.dtype
         for dtypes, kind in cls.PandasTypes:
@@ -64,39 +48,47 @@ class AttributeFactory:
                 return kind
         raise ValueError("Could not match kind for dtype: {0}".format(dtype))
 
+    def __call__(self, index: int, spec=None):
+        '''Make an attribute from column index and hints
+        
+        >>> import numpy as np
+        >>> df = DataFrame({'a':np.r_[True, False, True, True],'b':['one','two','three','five'],'c':[3,2,4,6]})
+        >>> aif = AttributeInfoFactory(df)
+        >>> aif(0)
+        <Attribute[BOOLEAN]:a>
+        >>> aif(1)
+        <Attribute[CATEGORICAL]:b>
+        >>> aif(2)
+        <Attribute[NUMERICAL]:c>
+        '''
+        data = self._data
+        series = data.iloc[:,index]
+        if spec is None:
+            kind = self._infer_kind(series)
+        else:
+            kind = self.resolve_kind(spec)
+        cls_attr = self.__map_kind_to_class[kind]
+        return cls_attr(data, index)
+
     @classmethod
     def _register_classes(cls, classes: Sequence[Type['Attribute']]):
         for attribute_class in classes:
-            cls.map_kind_to_class[attribute_class.KIND] = attribute_class
-
-    @classmethod    
-    def make(self, data: 'GraphData', index: int, kind: Optional[KindType]=None):
-        '''Make an attribute from GraphData and a column index'''
-        
-        series = data.get_series(index, collapse=True)
-        attribute_kind: AttributeKind
-        if kind is None:
-            attribute_kind = AttributeFactory.infer_kind_from_series(series)
-        else:
-            attribute_kind = AttributeFactory.lookup_kind(kind)
-        
-        attribute_cls = AttributeFactory.get_class_from_kind(attribute_kind)
-        attribute = attribute_cls(data=data, index=index)
-        return attribute
+            cls.__map_kind_to_class[attribute_class.__kind__] = attribute_class
 
 
-class Attribute:
+class AttributeInfo:
     '''Defines the interpretation of a series'''
-    KIND: AttributeKind
+    __kind__: AttributeKind
+    __selectable__ = True
     
-    def __init__(self, data: 'GraphData', index: int) -> None:
+    def __init__(self, data: DataFrame, index: int) -> None:
         self._data = data
         self._index = index
 
     @property
     def kind(self):
         '''The kind of this attribute'''
-        return self.__class__.KIND
+        return self.__class__.__kind__
 
     @property
     def index(self):
@@ -106,7 +98,7 @@ class Attribute:
     @property
     def series(self) -> Series:
         '''Series data for the specified index'''
-        return self.data.get_series(self.index)
+        return self._data.iloc[:, self.index]
 
     @property
     def name(self) -> str:
@@ -114,51 +106,43 @@ class Attribute:
         return self.series.name
 
     @property
-    def data(self) -> 'GraphData':
-        '''The graph data this attribute refers to'''
+    def data(self):
+        '''The data frame this attribute describes'''
         return self._data
 
     def __repr__(self):
         return "<Attribute[{0.kind.name}]:{0.name}>".format(self)
 
 
-class AttributeCategorical(Attribute):
+class AttributeCategorical(AttributeInfo):
     '''An attribute to be interpreted as categorical'''
-    KIND = AttributeKind.CATEGORICAL
+    __kind__ = AttributeKind.CATEGORICAL
 
-    def __init__(self, data: 'GraphData', index: int) -> None:
-        super(AttributeCategorical, self).__init__(data=data, index=index)
-
-
-class AttributeNumerical(Attribute):
+class AttributeNumerical(AttributeInfo):
     '''An attribute to be interpreted as numerical'''
-    KIND = AttributeKind.NUMERICAL
+    __kind__ = AttributeKind.NUMERICAL
 
-    def __init__(self, data: 'GraphData', index: int) -> None:
-        super(AttributeNumerical, self).__init__(data=data, index=index)
-
-class AttributeBoolean(Attribute):
+class AttributeBoolean(AttributeInfo):
     '''An attribute to be interpreted as boolean'''
-    KIND = AttributeKind.BOOLEAN
-
-    def __init__(self, data: 'GraphData', index: int) -> None:
-        super(AttributeBoolean, self).__init__(data=data, index=index)
+    __kind__ = AttributeKind.BOOLEAN
 
 
-class AttributeIndex(Attribute):
+class AttributeIndex(AttributeInfo):
     '''An attribute containing numerical instance indices'''
-    KIND = AttributeKind.INDEX
-
-    def __init__(self, data: 'GraphData', index: int) -> None:
-        super(AttributeIndex, self).__init__(data=data, index=index)
+    __kind__ = AttributeKind.INDEX
+    __selectable__ = False
 
 
-class AttributeName(Attribute):
+class AttributeName(AttributeInfo):
     '''An attribute containing a list of instance names'''
-    KIND = AttributeKind.NAME
+    __kind__ = AttributeKind.NAME
+    __selectable__ = False
 
-    def __init__(self, data: 'GraphData', index: int) -> None:
-        super(AttributeName, self).__init__(data=data, index=index)
+AttributeInfoFactory._register_classes([AttributeCategorical, AttributeNumerical, AttributeBoolean, AttributeIndex, AttributeName])
+
+if __name__ == '__main__':
+    import doctest
+    doctest.testmod()
 
 
-AttributeFactory._register_classes([AttributeCategorical, AttributeNumerical, AttributeBoolean, AttributeIndex, AttributeName])
+

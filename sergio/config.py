@@ -27,8 +27,6 @@ from sergio.language import ConjunctionLanguage, LANGUAGES
 from sergio.measures import MEASURES, OPTIMISTIC_ESTIMATORS
 
 from sergio.searches import ScoringFunctions
-from sergio.experiment import Experiment
-from sergio.datasets.factory import DatasetFactory
 from sergio.predicates import PREDICATE_KINDS_RESOLVER
 from sergio.discretisers import DISCRETISER_RANGE_RESOLVER
 from sergio.attributes import AttributeKind
@@ -39,54 +37,10 @@ import argparse
 import traceback
 import signal
 import sys
+from sergio import FileManager
+from sergio.data.factory import DatasetFactory
 
 log = getModuleLogger(__name__)
-
-class FileManager:
-    class Kinds(enum.Enum):
-        LOG = enum.auto()
-        WORK = enum.auto()
-        DATA = enum.auto()
-        SOCKET = enum.auto()
-        DEFAULT = enum.auto()
-
-    FILE_KINDS_TEXT = ', '.join(Kinds.__members__.keys())
-        
-    def __init__(self, paths: Dict[str,str]={}, default_path=None) -> None:
-        self._paths:Dict[str,str] = {}
-        for kind,path in paths.items():
-            self.set_kind_path(kind, path)
-        if default_path is None:
-            default_path = os.path.curdir
-        self.set_kind_path(None, default_path)
-
-    def _kind_enum(self, kind):
-        if isinstance(kind, str):
-            kind_enum = FileManager.Kinds[kind]
-        elif isinstance(kind, FileManager.Kinds):
-            kind_enum = kind
-        elif kind is None:
-            kind_enum =FileManager.Kinds.DEFAULT
-        else:
-            raise TypeError(f'Only kinds {self.FILE_KINDS_TEXT} are allowed.')
-        return kind_enum
-            
-    def set_kind_path(self, kind, path):
-        kind_enum = self._kind_enum(kind)
-        self._paths[kind_enum] = path
-        
-    def get_kind_path(self, kind):
-        kind_enum = self._kind_enum(kind)
-        return self._paths.get(kind_enum, self._paths[FileManager.Kinds.DEFAULT])
-    
-    def get(self, file, kind=None):
-        base = self.get_kind_path(kind)
-        path = os.path.join(base, file)
-        return path
-    
-    def __repr__(self):
-        txt = ",".join(f'{k.name}:"{v}"' for k,v in self._paths.items())
-        return f'<{self.__class__.__name__}:{txt}>'
 
 
 class ExperimentActions(UserList):
@@ -165,14 +119,12 @@ class FmtActionParameter(ActionParameter):
 class ExperimentAction(ActionBase):
     action: str = None
 
-    file_manager = FileManager()
-    
-    def __init__(self, experiment):
+    def __init__(self, experiment, file_manager:FileManager=None):
         super(ExperimentAction, self).__init__()
         self._experiment = experiment
         self._actions = None
         self._index = None
-        
+        self.file_manager = file_manager if file_manager is not None else FileManager()
     @property
     def index(self):
         return self._index
@@ -215,7 +167,7 @@ class ConfigAction(ExperimentAction):
     action_parameters = (FmtActionParameter('tag', '-t', help='Tag of this experiment.', format=True, default='run-{runtime.pid}-{runtime.date}'),
                          ActionParameter('log_delay', '-D', '--log-delay', default=[], action='append', metavar=('LEVEL','DELAY'),nargs=2,help=f'Delay (in seconds) between successive prints of the given message level.'),
                          ActionParameter('log_level', '-l', '--log-level', default='INFO', help=f'Log level to use. Available: {formatLevelNames()}.'),
-                         ActionParameter('path', '-p', '--path', metavar=('KIND','PATH'), default=[], action='append',nargs=2, help=f'Set the paths for different uses. Available: {FileManager.FILE_KINDS_TEXT}. Python formatted.'),
+                         #ActionParameter('path', '-p', '--path', metavar=('KIND','PATH'), default=[], action='append',nargs=2, help=f'Set the paths for different uses. Available: {FileManager.FILE_KINDS_TEXT}. Python formatted.'),
                          FmtActionParameter('log_file', '-f', '--log-file', default='{config.tag_formatted}.log', format=True, help='File to write log to. It will be python-formatted.'),
 #                         FmtActionParameter('socket_file', '-s', '--socket-file', default='{config.tag_formatted}.sock', format=True, help='Socket for the control interface.'),
                          ActionParameter('log_fmt', '-F', '--log-format', default=SergioLogger.default_format(),metavar='FMT', help='Format to use when writing.'),
@@ -227,7 +179,7 @@ class ConfigAction(ExperimentAction):
         if self.values.log_file is None:
             return None
         else:
-            return self.file_manager.get(self.values.log_file_formatted,FileManager.Kinds.LOG)
+            return self.file_manager.get(self.values.log_file_formatted,FileKinds.LOG)
     
     def validate(self):
         log.setLevel(self.values.log_level)
@@ -241,7 +193,7 @@ class ConfigAction(ExperimentAction):
         # Setup logging
         self.validate()
         if self.log_file is not None:
-            file = self.file_manager.get(self.values.log_file_formatted,FileManager.Kinds.LOG)
+            file = self.file_manager.get(self.values.log_file_formatted,FileKinds.LOG)
             ch = logging.FileHandler(file)
             ch.setLevel(log.level)
             ch.setFormatter(logging.Formatter(self.values.log_fmt))

@@ -9,11 +9,12 @@ from contextlib import contextmanager
 from pickle import UnpicklingError, load, dump
 
 from typing import Callable, Any, Optional, BinaryIO, Iterator
+import re
 
 
 class FileCache:
     '''Cache loaded data using the pickle system'''
-
+    __max_tag_size__ = None
     def __init__(self, folder : str='cache') -> None:
         self._folder: str = folder
         self._store_active : bool = True
@@ -23,16 +24,11 @@ class FileCache:
     Helpers
     '''
 
-    @contextmanager
-    def get_file(self, tag: str, write: bool=False) -> Iterator[BinaryIO]:
+    def open(self, tag: str, *args, **kwargs):
         '''Open a file given the cache tag'''
         file_name = path.join(self.folder, "cache-{0}.dat".format(tag))
-        if write:
-            with open(file_name, "wb") as fid:
-                yield fid
-        else:
-            with open(file_name, "rb") as fid:
-                yield fid
+        return open(file_name, *args, **kwargs)
+    
 
     '''
     Properties
@@ -74,7 +70,7 @@ class FileCache:
 
     def store(self, tag: str, data: Any) -> 'Cache':
         '''Store a given data to the file designated by the given tag'''
-        with self.get_file(tag, write=True) as fid:
+        with self.open(tag, 'wb') as fid:
             dump(data, file=fid)
         return self
 
@@ -84,7 +80,7 @@ class FileCache:
         reloaded: bool = False
         if not reload and self.load_active:
             try:
-                with self.get_file(tag, write=False) as fid:
+                with self.open(tag, 'rb') as fid:
                     data = load(fid)
                 reloaded = False
             except (UnpicklingError, OSError) as _:
@@ -97,6 +93,36 @@ class FileCache:
         if store and reloaded:
             self.store(tag, data)
         return data
+    
+    if False:
+        rex_keys_1 = re.compile('[_]')
+        rex_keys_2 = re.compile('[aoueiAOUEI_]')
+        def make_tag_from_dict(self, dct, pressure):
+            if pressure == 0:
+                spars = ','.join(f'{k}:{v!r}' for k,v in dct.items())
+            else:
+                pars = []
+                for k,v in dct.items():
+                    if v is None:
+                        continue
+                    if isinstance(v, float):
+                        sv = f'{v:.6g}'
+                    elif isinstance(v,bool):
+                        sv = 'T' if v else 'F'
+                    else:
+                        sv = f'{v!s}'
+                    if pressure >= 2:
+                        rex = self.rex_keys_1 if pressure<3 else self.rex_keys_2
+                        k = rex.sub('',k)
+                    pars.append(f'{k}:{sv}')
+                spars = ','.join(pars)
+                if pressure >= 4:
+                    spars = spars[:self.__max_tag_size__]
+            return self.make_tag(spars)
+        rex_normalise = re.compile('^[]a-zA-Z0-9:,(){}[]+')
+        def make_tag(self, what):
+            tag = self.rex_normalise.sub('_', what)
+            return tag
 
 
 DEFAULT_FILE_CACHE = FileCache()

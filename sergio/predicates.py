@@ -13,8 +13,8 @@ import operator
 from pandas.core.series import Series, isna, notna
 import numpy as np
 
-from colito.summarisable import SummaryOptions, Summarisable
-from sergio.attributes import AttributeKind, Attribute, AttributeCategorical, AttributeNumerical, \
+from colito.summaries import SummaryOptions, Summarisable
+from sergio.attributes import AttributeKind, AttributeInfo as Attribute, AttributeCategorical, AttributeNumerical, \
     AttributeBoolean
 from sergio.discretisers import Discretiser, Interval, DEFAULT_DISCRETISER
 from colito.resolvers import make_enum_resolver

@@ -12,7 +12,7 @@ import enum
 
 import colito.matlab as mtl
 
-from colito.summarisable import Summarisable, SummaryOptions
+from colito.summaries import Summarisable, SummaryOptions
 from colito.resolvers import make_enum_resolver
 
 class Minimisers:

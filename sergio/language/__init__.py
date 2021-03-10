@@ -15,9 +15,8 @@ from numpy import ndarray, ones, stack, where, argmin, cumprod, zeros, arange
 import numpy as np
 
 from colito.cache import ValueCache as Cache
-from colito.indexing import Indexer, ClassCollection
-from colito.summarisable import Summarisable, SummaryOptions, SummaryParts,\
-    SummarisableList
+from colito.indexing import Indexer, ClassCollection, SimpleIndexer
+from colito.summaries import Summarisable, SummaryOptions, SummarisableList
 from colito.logging import getModuleLogger
 from .utils import EffectiveValiditiesTracker, EffectiveValiditiesView, CandidateRestriction, Indices
 from ..predicates import Predicate
@@ -244,21 +243,16 @@ class ConjunctionLanguage(Summarisable, Language):
     '''Language of predicate conjunctions'''
     tag = 'conjunctions'
 
-    def __init__(self, data, predicates: Optional[PredicateOrIndexCollectionType]=None) -> None:
+    def __init__(self, data, predicates) -> None:
         super(ConjunctionLanguage, self).__init__(data=data)
         self._data = data
-        if predicates is None:
-            predicates = data.get_predicates()
-        self._predicate_indexer: Indexer[Predicate] = Indexer(predicates)
-        self._predicates:List[Predicate] = self._predicate_indexer.items
+        self._predicate_indexer = SimpleIndexer(predicates)
         self._root: ConjunctionSelector = ConjunctionSelector(self, [])
-    
-    predicates = property(lambda self:self._predicates, None,'The list of predicates that this language is using.')
     
     def validate(self, predicates: PredicateOrIndexCollectionType, out: ndarray=None):
         '''Compute the validity of a set of predicates'''
         predicate_objects = self.predicate_objects(predicates)
-        nrows = self.data.nrows
+        nrows = self.data.num_entities
         if out is not None:
             assert len(out) == nrows, f'Output vector size mismatch (size was {out.__len__()} instead of {nrows}).'
             validity = out
@@ -706,8 +700,6 @@ class ClosureConjunctionLanguageFull(ClosureConjunctionLanguageBase):
     def refine(self, selector: ClosureConjunctionSelector, blacklist: Optional[PredicateOrIndexCollectionType]=None) -> Iterator[ClosureConjunctionSelector]:
         raise NotImplementedError()  # this code is wrong
         num_predicates = len(self.predicates)
-        candidate_indices: ndarray = np.fromiter((i for i in range(num_predicates)
-                                                  if not i in selector.index_set), int)
 
         extension_indices = tuple(self._indices_refinement_extensions(selector=selector, blacklist=blacklist))
         num_predicates = len(self.predicates)

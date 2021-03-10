@@ -6,18 +6,18 @@ Created on Feb 1, 2021
 from datetime import datetime
 import os
 
-from .summarisable import SummarisableAsDict
 from .logging import getModuleLogger
 
 from . import property_eval_once
+from .summaries import SummarisableFromFields
 
 log = getModuleLogger(__name__)
 
-class RuntimeEnvironment(SummarisableAsDict):
-    _fields = ('date', 'hostname', 'username', 'pid', 'cwd', 'cpu_count', 'git_version')
+class RuntimeEnvironment(SummarisableFromFields):
+    __summary_fields__ = ('date', 'hostname', 'username', 'pid', 'cwd', 'cpu_count', 'git_version')
     
     def __init__(self):
-        self.date = datetime.DateTime()
+        self.date = datetime.now()
 
     @property
     def pid(self):
@@ -67,7 +67,4 @@ class RuntimeEnvironment(SummarisableAsDict):
                 return txt_out.decode('latin').strip()
         except Exception as e:
             return f'error-{e[0]}'
-    
-    def summary_dict(self, options):
-        return self.summary_from_fields(self._fields)
 

@@ -4,9 +4,7 @@ Created on May 24, 2018
 @author: janis
 '''
 
-import math
 import logging
-import time
 from collections import namedtuple
 from logging import getLogger, _levelToName, _nameToLevel, getLevelName as _getLevelName,\
     LoggerAdapter

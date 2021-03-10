@@ -2,32 +2,31 @@
 
 import logging
 
-from math import inf, isinf
+import enum
+import math
 import time
-from itertools import count
+import itertools
 import numpy as np
+import operator
+import functools
 
-from typing import Tuple, Callable, Collection, Set, cast, Generator, Iterator, List, \
-    NamedTuple, TypeVar, Generic, Iterable, Sequence, Union
-from collections import namedtuple, Counter, OrderedDict
+from typing import Set, Callable, Tuple, NamedTuple, cast, Iterator, Collection,\
+    List, Iterable, Union
+from collections import namedtuple, Counter
 
 from colito.logging import getModuleLogger
+from colito.statistics import StatisticsBase, StatisticsCounter, updater as stats_updater,\
+    StatisticsUpdater
+from colito.summaries import SummaryOptions, SummarisableList, Summarisable,\
+    SummarisableDict
 
-from ..measures import OptimisticEstimator, Measure, CachingEvaluator
+from ..scores import OptimisticEstimator, Measure
 from ..language import Language, Selector, ConjunctionSelector, ConjunctionLanguage
 from ..queues import PriorityQueue, TopKQueue, MaxEntry, Entry
 from ..predicates import Predicate
-from colito.statistics import StatisticsBase, StatisticsCounter, updater as stats_updater,\
-    StatisticsUpdater
 from builtins import classmethod, property
 from colito.factory import FactoryBase, factorymethod, FactoryGetter, \
     ProductBundle, FactoryDescription
-from colito.summarisable import SummaryOptions, SummarisableList, Summarisable
-from _functools import reduce
-import operator
-from enum import auto, Enum
-import enum
-from colito.summarisable import SummarisableDict
 
 log = getModuleLogger(__name__.split('.')[-1])
 
@@ -267,15 +266,15 @@ class DFSState(NamedTuple):
         state = digest._replace(selector=language.deserialise_selector(digest.selector))
         return state
 
-    def summary_dict(self, selector_dict=None, suffix=''):
-        dct = OrderedDict([(f'selector{suffix}',self.selector if selector_dict is None else selector_dict[self.selector]),
-                           (f'pruned{suffix}', list(self.pruned)),
-                           (f'covered{suffix}', list(self.covered)),
-                           (f'selector_depth{suffix}', self.depth),
-                           (f'search_max_depth{suffix}', self.search.max_depth),
-                           (f'objective_value{suffix}',self.objective_value),
-                           (f'optimistic_estimate{suffix}',self.optimistic_estimate),
-                           ])
+    def __summary_dict__(self, selector_dict=None, suffix=''):
+        dct = {f'selector{suffix}':self.selector if selector_dict is None else selector_dict[self.selector],
+               f'pruned{suffix}': list(self.pruned),
+               f'covered{suffix}': list(self.covered),
+               f'selector_depth{suffix}': self.depth,
+               f'search_max_depth{suffix}': self.search.max_depth,
+               f'objective_value{suffix}': self.objective_value,
+               f'optimistic_estimate{suffix}': self.optimistic_estimate,
+               }
         return dct
 
 class ScoringFunctions(FactoryBase):
@@ -339,11 +338,11 @@ class ScoringFunctions(FactoryBase):
     description = FactoryDescription()
 
 
-class SearchStatus(Enum):
-    IDLE = auto()
-    RUNNING = auto()
-    COMPLETED = auto()
-    ABORTED = auto() 
+class SearchStatus(enum.Enum):
+    IDLE = enum.auto()
+    RUNNING = enum.auto()
+    COMPLETED = enum.auto()
+    ABORTED = enum.auto() 
 
 
 class LanguageTopKBranchAndBound:
@@ -535,7 +534,7 @@ class DepthFirstSearch(LanguageTopKBranchAndBound, Summarisable):
     def __init__(self, language: ConjunctionLanguage,
                  measure: Measure, optimistic_estimator: OptimisticEstimator,
                  k:int=1, max_best:bool=True,
-                 approximation_factor:float=1., max_depth:float=inf,
+                 approximation_factor:float=1., max_depth:float=math.inf,
                  state_scoring=None,refinement_scoring='optimistic_estimate', visitor = DFSVisitor()) -> None:
         
         super().__init__(language=language, measure=measure, optimistic_estimator=optimistic_estimator, k=k, max_best=max_best, approximation_factor=approximation_factor)
@@ -616,7 +615,7 @@ class DepthFirstSearch(LanguageTopKBranchAndBound, Summarisable):
 
     def _run(self, root_selector: Selector=None) -> bool:
         # Initialisations
-        self._objective_attainable = -inf
+        self._objective_attainable = -math.inf
         self._reached_max_depth = False
         self._stats._reset()
         
@@ -762,7 +761,7 @@ class IterativeDeepening(LanguageTopKBranchAndBound, Summarisable):
     
     def __init__(self, language: ConjunctionLanguage,
                  measure: Measure, optimistic_estimator: OptimisticEstimator, k:int=1, max_best:bool=True,
-                 approximation_factor:float=1.,depths:DepthSpec=inf,
+                 approximation_factor:float=1.,depths:DepthSpec=math.inf,
                  state_scoring=None, refinement_scoring='optimistic_estimate',
                  dfs=DepthFirstSearch) -> None:
         
@@ -780,8 +779,8 @@ class IterativeDeepening(LanguageTopKBranchAndBound, Summarisable):
         '''Parse depth parameter to an integer iterable'''
         depth_iter: Iterable[int]
         if isinstance(depths, float):
-            if isinf(depths) and depths > 0:
-                depth_iter = count()
+            if math.isinf(depths) and depths > 0:
+                depth_iter = itertools.count()
             elif int(depths) == depths:
                 depth_iter = cls._get_depths(int(depths))
             else:
@@ -799,7 +798,7 @@ class IterativeDeepening(LanguageTopKBranchAndBound, Summarisable):
         if self._dfs_runs is None:
             return DepthFirstSearch.Statistics()
         else:
-            stats = reduce(operator.add, (dfs.statistics for dfs in self._dfs_runs))
+            stats = functools.reduce(operator.add, (dfs.statistics for dfs in self._dfs_runs))
             return stats
     
     @property
