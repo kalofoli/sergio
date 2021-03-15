@@ -15,8 +15,8 @@ log = getModuleLogger(__name__)
 class SummaryError(Exception): pass
 
 class SummaryOptions(SimpleNamespace):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, compact=False,  **kwargs):
+        super().__init__(compact=compact, **kwargs)
 
 DEFAULT_SUMMARY_OPTIONS = SummaryOptions()
 
@@ -40,7 +40,7 @@ def summary_from_fields(instance, fields, missing=OnMissing.RAISE):
             try:
                 return getattrof(field)
             except AttributeError:
-                raise SummaryError(f'No field {field} while summarising {instance} of type {type(instance).__name__}', instance)
+                raise SummaryError(f'No field {field} while summarising instance of type {type(instance).__name__}', instance)
     elif missing == OnMissing.OMMIT:
         fieldvalue = getattrof
         flds = tuple(f for f in fields if hasattr(instance, f))
@@ -98,7 +98,7 @@ class SummarisableAsDict(Summarisable):
         raise NotImplementedError()
 
     def __repr__(self):
-        dct = self.summary_dict()
+        dct = self.__summary_dict__(SummaryOptions(compact=True))
         params_txt = ','.join(f'{key}={value!r}' for key,value in dct.items())
         return f'<{self.__class__.__name__}({params_txt})>'
 
@@ -496,7 +496,7 @@ class FieldSummariser(Summariser):
 #         return f'{self.__class__.__name__}({self.summary_value!r})'
 #     def __str__(self):
 #         return str(self.value)
-#     def summary(self, options:SummaryOptions):
+#     def __summary__(self, options:SummaryOptions):
 #         return self.summary_value
 #   
 # '''Tagging class as summary grouppable. Also usable as a mixin.'''
@@ -512,7 +512,7 @@ class FieldSummariser(Summariser):
 #             self.summary_group_name = self.__class__.__name__
 #         if not hasattr(self.__class__,'summary_value'):
 #             self.summary_value = value
-#     def summary(self, options:SummaryOptions):
+#     def __summary__(self, options:SummaryOptions):
 #         return self.summary_value
 #   
 # class SummaryGroupCompressible(SummaryGroupable):
@@ -642,7 +642,7 @@ class FieldSummariser(Summariser):
 #             cls_cmp = self.compressors.get(group,self.visitor.summary_compressible)
 #             return cls_cmp(data)
 #             
-#         def summary(self, summary_options:SummaryOptions):
+#         def __summary__(self, summary_options:SummaryOptions):
 #             self.finalised = True
 #             if self.compress:
 #                 cls_lst,cls_dct,cls_cmp = SummarisableList, self.SummaryGroupData, self._compressible_class

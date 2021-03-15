@@ -20,7 +20,7 @@ class ScalarEvaluatorMixin(SummarisableFromFields):
         super().__init__(*args, **kwargs)
         if target is None:
             if isinstance(self.data, EntityAttributesWithAttributeTarget):
-                target_data = self.data.target_data()
+                target_data = self.data.target_data
             else:
                 raise TypeError(f'No target specified and data has no default.')
         else:
@@ -38,7 +38,7 @@ class ScalarOptimisticEstimator(ScalarEvaluatorMixin, OptimisticEstimator):
 
 class JaccardScoreMixin(CachingScoreMixin):
     __collection_title__ = 'Jaccard'
-    __summary_fields__ = ('target',)
+    __summary_fields__ = ('target_name',)
     def __init__(self, data: EntityAttributes, target:str=None) -> None:
         super().__init__(data=data, target=target)
         if self.target_data.dtype != bool:

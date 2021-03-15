@@ -100,18 +100,13 @@ class OptimisticEstimator(Summarisable, ClassCollectionRegistrar):
         '''The data associated with this OptimisticEstimator'''
         return self._data
 
-    def __repr__(self):
-        dct = self.summary_dict(SummaryOptions.default())
-        params_txt = ','.join(f'{key}={value}' for key,value in dct.items())
-        return f'<{self.__class__.__name__}({params_txt})>'
-
     @classmethod
     def parse_argument(cls, name, value, parameter):
         raise NoConversionError()
 
     @classmethod
     def make_from_strings(cls, name, *args, **kwargs):
-        oest_cls = OPTIMISTIC_ESTIMATORS.get_class_from_tag(name)
+        oest_cls = OPTIMISTIC_ESTIMATORS.tags[name]
         args_p, kwargs_p = resolve_arguments(oest_cls.__init__, args, kwargs, handler=oest_cls.parse_argument)
         oest = oest_cls(*args_p[1:], **kwargs_p)
         return oest

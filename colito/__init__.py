@@ -31,3 +31,11 @@ class property_eval_once:
         setattr(obj, func.__name__, value)
         return value
 
+
+class NamedUniqueConstant:
+    '''A named object to use as a unique constant'''
+    __slots__ = ('_name',)
+    def __init__(self, name):
+        self._name = name
+    def __repr__(self): return self._name
+    def __eq__(self, other): return self is other

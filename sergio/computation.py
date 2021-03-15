@@ -9,7 +9,8 @@ from typing import Dict, Any, Iterable
 from pandas import DataFrame
 
 from colito.logging import getModuleLogger, to_stuple
-from colito.summaries import Summarisable, SummaryOptions, SummarisableList
+from colito.summaries import Summarisable, SummaryOptions, SummarisableList,\
+    SummarisableFromFields
 from colito.runtime import RuntimeEnvironment
 from colito.factory import DEFAULT_TYPE_RESOLVER
 
@@ -44,8 +45,12 @@ def rename_columns(df, reg, txt,regexp=False, inplace=False):
 DataFrame.rename_columns = rename_columns
 #TODO: Monkey patching is UGLY. Move to a better place.
 
-class Computation(Summarisable):
+class Computation(SummarisableFromFields):
     SCORE_CONFIGS = ['AverageCoreness']
+    __summary_fileds__ = ('tag', 'runtime', 'dataset', 'language', 'measure',
+                          'optimistic_estimator', 'search', 'subgroups')
+    
+    __summary_convert__ = {'subgroups': SummarisableList}
 
     def __init__(self, tag=None, log=log, file_manager = None, cache = DEFAULT_FILE_CACHE):
         self._file_manager: FileManager = file_manager if file_manager is not None else FileManager()
@@ -137,12 +142,21 @@ class Computation(Summarisable):
         >>> c.dataset = 'moondot'
         >>> c.dataset
         <EntityAttributesWithArrayTarget[moondot](73x4/4) target: position(2d float64)>
-        >>> c.dataset = 'moondot:CATEGORICAL'
-        <EntityAttributesWithTarget[moondot](73x4/4) target: location(2d float)>
+        >>> c.load_dataset('moondot:CATEGORICAL').dataset
+        <EntityAttributesWithArrayTarget[moondot](73x1/1) target: position(2d float64)>
+        >>> c.load_dataset('toy-array:circledots').dataset
+        <EntityAttributesWithArrayTarget[circledots](147x3/3) target: position(2d float64)>
+        >>> c.load_dataset('toy-scalar:circledots').dataset
+        <EntityAttributesWithAttributeTarget[circledots](147x3/4) target: position_norm2(float64@3)>
+        >>> c.load_dataset('toy-scalar:circledots,NORM,param=inf').dataset
+        <EntityAttributesWithAttributeTarget[circledots](147x3/4) target: position_norminf(float64@3)>
+        >>> c.load_dataset('toy-scalar:circledots,param=outer,scalarify=ATTR').dataset
+        <EntityAttributesWithAttributeTarget[circledots](147x2/3) target: outer(bool@2)>
         """
         df = DatasetFactory(cache = self.cache, file_manager = self.file_manager)
         dataset = df.load_dataset(name, *args, **kwargs)
         self._dataset = dataset
+        return self
         
     def load_prediciser(self, cuts=5, ranges='SLABS_POSITIVE', negate='BOOLEAN|CATEGORICAL|RANGED'):
         """
@@ -161,7 +175,7 @@ class Computation(Summarisable):
         >>> _ = c.load_prediciser()
         >>> c.language = 'conjunctions'
         >>> tuple(map(str,c.language.refine(c.language.root)))
-        ('{a}', '{!a}', '{b}', '{!b}', '{c}', '{!c}', '{main}', '{!main}')
+        ('{main}', '{!main}', '{a}', '{!a}', '{b}', '{!b}', '{c}', '{!c}')
         """
         language_cls = LANGUAGES.get_class_from_tag(name)
         if self.dataset is None:
@@ -174,11 +188,11 @@ class Computation(Summarisable):
     def load_measure(self, name, **kwargs):
         """
         >>> import sergio.scores.scalars
-        >>> c = Computation(cache=None, file_manager=FileManager('datasets'))
-        >>> c.dataset = 'moondot'
-        >>> _ = c.load_prediciser().load_language().load_measure('coverage')
-        >>> c.measure
+        >>> c = Computation(cache=None, file_manager=FileManager('datasets')).load_dataset('toy-scalar:circledots,ATTR,outer').load_prediciser().load_language()
+        >>> c.load_measure('coverage').measure
         <MeasureCoverage()>
+        >>> c.load_measure('jaccard').measure
+        <MeasureJaccard(target_name='outer')>
         """
         
         self._log.info(f'Loading measure {name}.')
@@ -192,21 +206,19 @@ class Computation(Summarisable):
         self._measure = meas
         self._log.info(f'Set measure to {meas}.')
         return self
-
+    
     def load_optimistic_estimator(self, name, **kwargs):
         """
         >>> import sergio.scores.scalars
-        >>> c = Computation(cache=None, file_manager=FileManager('datasets'))
-        >>> c.dataset = 'moondot'
-        >>> _ = c.load_prediciser().load_language().load_measure('jaccard').load_optimistic_estimator('jaccard')
-        >>> c.measure
-        <MeasureCoverage()>
+        >>> c = Computation(cache=None, file_manager=FileManager('datasets')).load_dataset('toy-scalar:circledots,ATTR,outer').load_prediciser().load_language()
+        >>> c.load_optimistic_estimator('jaccard').optimistic_estimator
+        <OptimisticEstimatorJaccard(target_name='outer')>
         """
         self._log.info(f'Loading optimistic estimator {name}.')
         if self.dataset is None:
             raise ValueError('No dataset is set; scores need a dataset in order to be loaded.')
         oest = OptimisticEstimator.make_from_strings(name, self.dataset, **kwargs)
-        meas = self.measure
+        #meas = self.measure
         #if isinstance(oest, CallbackSubgraphEvaluator) and meas is not None and isinstance(meas, CallbackSubgraphEvaluator):  # Couple the two
         #    self._log.info(f'Coupling optimistic estimator {oest} with measure {meas}.')
         #    oest.couple_evaluator(meas)
@@ -254,7 +266,18 @@ class Computation(Summarisable):
         return self
         
     
-    def optimise(self, k, depths=6,approximation_factor=1, state_scoring=None,refinement_scoring=None, track_results=False):
+    def optimise(self, k=1, depths=6,approximation_factor=1, state_scoring=None,refinement_scoring=None, track_results=False):
+        r'''
+        >>> import sergio.scores.scalars
+        >>> c = Computation(cache=None, tag='doctest', file_manager=FileManager('datasets'))\
+        ...     .load_dataset('toy-scalar:circledots,ATTR,outer').load_prediciser().load_language()\
+        ...     .load_measure('jaccard').load_optimistic_estimator('jaccard')
+        >>> c
+        <Computation[doctest] D:<EntityAttributesWithAttributeTarget[circledots](147x2/3) target: outer(bool@2)>, L:<ClosureConjunctionLanguageRestricted: of 10 predicates>, SG:0, M:<MeasureJaccard(target_name='outer')>, O:<OptimisticEstimatorJaccard(target_name='outer')>>
+        >>> _ = c.optimise()
+        >>> ','.join(map(str,c.subgroups))
+        '{[label!=dot]^[label!=spread]}'
+        '''
         if track_results:
             log.info('Attaching results tracker visitor.')
             dfs_visitor = DFSResultLogger(self._result_history)
@@ -285,17 +308,8 @@ class Computation(Summarisable):
         self._subgroups = subgroups
         return self
 
-    def summary_dict(self, options:SummaryOptions):
-        summary: Dict[str, Any] = {
-            'tag':self.tag,
-            'runtime':self._runtime_environment,
-            'dataset':self._dataset,
-            'language':self._language,
-            'measure':self.measure,
-            'optimistic_estimator':self.optimistic_estimator,
-            'search':self._search,
-            'subgroups': SummarisableList(self._subgroups)
-            }
+    def __summary_dict__(self, options:SummaryOptions):
+        summary = super().__summary_dict__(options)
         if self.result_history is not None:
             summary['result_history'] = self.result_history
         return summary

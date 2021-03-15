@@ -14,7 +14,7 @@ from typing import Set, Callable, Tuple, NamedTuple, cast, Iterator, Collection,
     List, Iterable, Union
 from collections import namedtuple, Counter
 
-from colito.logging import getModuleLogger
+from colito.logging import getModuleLogger, ColitoLogger
 from colito.statistics import StatisticsBase, StatisticsCounter, updater as stats_updater,\
     StatisticsUpdater
 from colito.summaries import SummaryOptions, SummarisableList, Summarisable,\
@@ -28,8 +28,8 @@ from builtins import classmethod, property
 from colito.factory import FactoryBase, factorymethod, FactoryGetter, \
     ProductBundle, FactoryDescription
 
-log = getModuleLogger(__name__.split('.')[-1])
-
+log = getModuleLogger(__name__, factory=ColitoLogger)
+logging.addLevelName(25, 'PROGRESS')
 
 class CandidateScoreFunctions:
     '''List of score functions ictating the order of a candidate in the priority queue'''
@@ -617,7 +617,7 @@ class DepthFirstSearch(LanguageTopKBranchAndBound, Summarisable):
         # Initialisations
         self._objective_attainable = -math.inf
         self._reached_max_depth = False
-        self._stats._reset()
+        self._stats.reset()
         
         if root_selector is None:
             root_selector = self.language.root

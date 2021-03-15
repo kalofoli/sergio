@@ -176,7 +176,7 @@ class StatisticsBase(SummarisableAsDict, metaclass=_StatisticsMeta):
     def _asdict(self):
         return {name:counter.getter(self) for name,counter in self.__statistics_counters__.items()}
     
-    def summary_dict(self, options:SummaryOptions): # pylint: disable=unused-argument
+    def __summary_dict__(self, options:SummaryOptions): # pylint: disable=unused-argument
         return self.summary_from_fields(self.__statistics_counters__)
 
     def __iadd__(self, other):

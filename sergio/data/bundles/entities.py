@@ -6,14 +6,12 @@ Created on Feb 8, 2021
 
 import pandas as pd
 import numpy as np
+import itertools
 from typing import List, Sequence
 
 from colito.summaries import SummarisableFromFields, SummaryFieldsAppend
 from sergio.attributes import AttributeInfoFactory
-import itertools
-from collections import namedtuple
 from colito.decorators import with_field_printers
-import typing
 
 __all__ = ['EntityAttributes', 'EntityAttributesWithArrayTarget', 'EntityAttributesWithAttributeTarget']
 
@@ -210,10 +208,10 @@ class EntityAttributesWithAttributeTarget(EntityAttributesWithTarget):
     
     >>> df = pd.DataFrame({'a':np.r_[1,2,3,5],'b':['one','two','three','five'],'c':[3,2,3,2]})
     >>> EntityAttributesWithAttributeTarget(attribute_data=df, target='a', name='test', attribute_selection=[1,0,1])
-    <EntityAttributesWithAttributeTarget[test](4x1/3) target: a(0)>
+    <EntityAttributesWithAttributeTarget[test](4x1/3) target: a(int64@0)>
     >>> ea = EntityAttributesWithAttributeTarget(attribute_data=df, name='test', target='a', attribute_selection={None:False, 'b':1})
     >>> ea
-    <EntityAttributesWithAttributeTarget[test](4x1/3) target: a(0)>
+    <EntityAttributesWithAttributeTarget[test](4x1/3) target: a(int64@0)>
     """
     __summary_fields__ = SummaryFieldsAppend(('target_index','target_dtype'))
 
@@ -242,7 +240,7 @@ class EntityAttributesWithAttributeTarget(EntityAttributesWithTarget):
         return self._attribute_data.columns[self._target_index]
     @property
     def target_description(self) -> str:
-        return f'{self.target_name}({self.target_index})'
+        return f'{self.target_name}({self.target_dtype}@{self.target_index})'
     
 class EntityAttributesWithArrayTarget(EntityAttributesWithTarget):
     """Entity data where the target is a numpy array with one row per entry.
