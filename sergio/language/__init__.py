@@ -11,7 +11,6 @@ from typing import Sequence, Optional, Tuple, List, Mapping, Union, Iterator, Di
     Set, Iterable, Callable, cast, TypeVar, Generic, NamedTuple
 from itertools import chain, islice, repeat
 
-from numpy import ndarray, ones, stack, where, argmin, cumprod, zeros, arange
 import numpy as np
 
 from colito.cache import ValueCache as Cache
@@ -68,17 +67,19 @@ class SelectorParserBase(Generic[SelectorType, LanguageType]):
         raise NotImplementedError()
 
 
-class Selector(Generic[LanguageType]):
+class Selector():
     '''Selector for a set of entities'''
+    @property
+    def validity(self) -> np.ndarray:
+        '''A logical of those entities that validate the selector'''
+        raise NotImplementedError()
+
+class LanguageSelector(Generic[LanguageType]):
+    '''Language-aware selector for a set of entities'''
 
     def __init__(self, language: LanguageType, cache: CacheSpecType=True) -> None:
         self._language: LanguageType = language
         self._cache: Cache = Cache.from_spec(cache)
-
-    @property
-    def validity(self) -> ndarray:
-        '''Get the list of validity validating the selector'''
-        raise NotImplementedError()
 
     @property
     def refinements(self) -> Sequence['SelectorBase']:
@@ -96,19 +97,15 @@ class Selector(Generic[LanguageType]):
         return self._cache
 
 
-class StaticSelector(Selector[LanguageType]):
+class StaticSelector(Selector):
 
-    def __init__(self, language: LanguageType, validity:ndarray) -> None:
-        super(StaticSelector, self).__init__(language=language)
-        self._validity:ndarray = validity
+    def __init__(self, validity:np.ndarray) -> None:
+        super().__init__()
+        self._validity:np.ndarray = validity
         
     @property
-    def validity(self) -> ndarray:
+    def validity(self) -> np.ndarray:
         return self._validity
-
-    @property
-    def refinements(self) -> List['StaticSelector']:
-        return []
 
 
 class Language(Generic[SelectorType]):
@@ -132,7 +129,7 @@ class Language(Generic[SelectorType]):
         raise NotImplementedError()
 
        
-class ConjunctionSelectorBase(Summarisable, Selector['ConjunctionLanguage']):
+class ConjunctionSelectorBase(Summarisable, LanguageSelector['ConjunctionLanguage']):
     '''Selector taking the conjunction of a set of predicates'''
 
     def __init__(self, language: 'ConjunctionLanguage', predicates: PredicateOrIndexCollectionType, cache: CacheSpecType=True) -> None:
@@ -155,7 +152,7 @@ class ConjunctionSelectorBase(Summarisable, Selector['ConjunctionLanguage']):
         return set(self.indices)
 
     @Cache.cached_property
-    def validity(self) -> ndarray:
+    def validity(self) -> np.ndarray:
         validity = self.language.validate(self.predicates)
         return validity
 
@@ -249,7 +246,7 @@ class ConjunctionLanguage(Summarisable, Language):
         self._predicate_indexer = SimpleIndexer(predicates)
         self._root: ConjunctionSelector = ConjunctionSelector(self, [])
     
-    def validate(self, predicates: PredicateOrIndexCollectionType, out: ndarray=None):
+    def validate(self, predicates: PredicateOrIndexCollectionType, out: np.ndarray=None):
         '''Compute the validity of a set of predicates'''
         predicate_objects = self.predicate_objects(predicates)
         nrows = self.data.num_entities
@@ -257,7 +254,7 @@ class ConjunctionLanguage(Summarisable, Language):
             assert len(out) == nrows, f'Output vector size mismatch (size was {out.__len__()} instead of {nrows}).'
             validity = out
         else:
-            validity = ones(nrows, dtype=bool)
+            validity = np.ones(nrows, dtype=bool)
         for predicate in predicate_objects:
             validity = validity & predicate.validate()
         return validity
@@ -385,7 +382,7 @@ class ConjunctionLanguage(Summarisable, Language):
             dct['predicates'] = SummarisableList(self.predicates)
         return dct
     
-class ClosureConjunctionSelector(ConjunctionSelector, Selector['ClosureConjunctionLanguageBase']):
+class ClosureConjunctionSelector(ConjunctionSelector, LanguageSelector['ClosureConjunctionLanguageBase']):
 
     def __init__(self, language: 'ClosureConjunctionLanguageBase',
                  predicates_path: PredicateOrIndexCollectionType,
@@ -433,7 +430,7 @@ class ClosureConjunctionSelector(ConjunctionSelector, Selector['ClosureConjuncti
         return self.indices_compact
 
     @Cache.cached_property
-    def validity(self) -> ndarray:
+    def validity(self) -> np.ndarray:
         validity = self.language.validate(self.predicates)
         return validity
 
@@ -509,15 +506,15 @@ class ClosureConjunctionLanguageBase(ConjunctionLanguage):
 
     def __init__(self, data, predicates: Optional[PredicateCollectionType]=None) -> None:
         super(ClosureConjunctionLanguageBase, self).__init__(data=data, predicates=predicates)
-        self._predicate_validities: ndarray = np.array(stack((predicate.validate() for predicate in self.predicates), axis=1), order='F')
+        self._predicate_validities: np.ndarray = np.array(np.stack([predicate.validate() for predicate in self.predicates], axis=1), order='F')
         self._root: ClosureConjunctionSelector = ClosureConjunctionSelector(self, [])
-        self._predicate_supports: ndarray = self._predicate_validities.sum(axis=0)
+        self._predicate_supports: np.ndarray = self._predicate_validities.sum(axis=0)
         
     def refine(self, selector: ClosureConjunctionSelector, greater_only: Optional[bool]=False,
                blacklist: Optional[PredicateOrIndexCollectionType]=None) -> Iterator[ClosureConjunctionSelector]:
         raise NotImplementedError()
     
-    def indices_minimal_approximation(self, validity: ndarray, indices_closure=None) -> Tuple[int, ...]:
+    def indices_minimal_approximation(self, validity: np.ndarray, indices_closure=None) -> Tuple[int, ...]:
         '''Compute an approximation to the minimal predicate list describing the closure'''
         if indices_closure is None:
             indices_closure = np.fromiter(self.indices_closure(validity), int)
@@ -525,7 +522,7 @@ class ClosureConjunctionLanguageBase(ConjunctionLanguage):
         remainder = ~validity
         closure_validities = self._predicate_validities[:, indices_closure]
         while remainder.sum():
-            minimal_index = argmin(closure_validities[remainder, :].sum(axis=0))
+            minimal_index = np.argmin(closure_validities[remainder, :].sum(axis=0))
             remainder &= closure_validities[:, minimal_index]
             minimal_indices_closure.append(minimal_index)
         minimal_indices = indices_closure[minimal_indices_closure]
@@ -534,24 +531,24 @@ class ClosureConjunctionLanguageBase(ConjunctionLanguage):
     def select(self, predicates, _closure=None):
         return ClosureConjunctionSelector(self, predicates_path=predicates, _closure=_closure)
     
-    def index_last_needed(self, validity: ndarray, indices: Tuple[int, ...]) -> int:
+    def index_last_needed(self, validity: np.ndarray, indices: Tuple[int, ...]) -> int:
         '''Return the predicate with the maximal index that is necessary to not change the selector support''' 
         if indices:
             support = validity.sum()
             indices_sorted = sorted(indices)
             buffer = self._predicate_validities[:, indices_sorted]
-            running_coverage = cumprod(buffer, out=buffer, axis=1, dtype=bool).sum(axis=0)
-            closure_index = where(running_coverage == support)[0][0]
+            running_coverage = np.cumprod(buffer, out=buffer, axis=1, dtype=bool).sum(axis=0)
+            closure_index = np.where(running_coverage == support)[0][0]
             minimum_index = int(indices_sorted[closure_index])
         else:
             minimum_index = None
         return minimum_index
         
-    def indices_closure(self, validity: ndarray, candidate_indices=slice(None, None, None)) -> Tuple[int, ...]:
+    def indices_closure(self, validity: np.ndarray, candidate_indices=slice(None, None, None)) -> Tuple[int, ...]:
         '''Return the predicate indices forming the closure of the selector'''
         num_indices = len(self.predicates)
-        indices = arange(num_indices)[candidate_indices]
-        closure_index_candidates = where(self._predicate_validities[np.ix_(validity, indices)].all(axis=0))[0]
+        indices = np.arange(num_indices)[candidate_indices]
+        closure_index_candidates = np.where(self._predicate_validities[np.ix_(validity, indices)].all(axis=0))[0]
         closure_index = indices[closure_index_candidates]
         return tuple(map(int, closure_index))
 
@@ -563,20 +560,20 @@ class ClosureConjunctionLanguageBase(ConjunctionLanguage):
         elif isinstance(what, Selector):
             validity = what.validity
             support = validity.sum()
-        elif isinstance(what, ndarray):
-            validity = cast(ndarray, what)
+        elif isinstance(what, np.ndarray):
+            validity = cast(np.ndarray, what)
             support = validity.sum()
         else:
             raise TypeError(f'Can not infer validity from object {what} of type {what.__class__}.')
         return validity, support 
     
-    def predicate_is_superset(self, master:Union[Predicate, Selector], candidates:Sequence[Predicate], only_proper:bool=False) -> ndarray:
+    def predicate_is_superset(self, master:Union[Predicate, Selector], candidates:Sequence[Predicate], only_proper:bool=False) -> np.ndarray:
         master_validity, master_support = self._get_validity_and_support(master)
         candidate_idx = list(self.predicate_indices(candidates))
         cover_sums = np.bitwise_and(master_validity[:,None], self._predicate_validities[:, candidate_idx]).sum(axis=0)
         return (cover_sums > master_support) if only_proper else (cover_sums >= master_support)
 
-    def predicate_is_subset(self, master:Union[Predicate, Selector], candidates:Sequence[Predicate], only_proper:bool=False) -> ndarray:
+    def predicate_is_subset(self, master:Union[Predicate, Selector], candidates:Sequence[Predicate], only_proper:bool=False) -> np.ndarray:
         master_validity, master_support = self._get_validity_and_support(master)
         candidate_idx = list(self.predicate_indices(candidates))
         cover_sums = np.bitwise_and(master_validity[:,None], self._predicate_validities[:, candidate_idx]).sum(axis=0)
@@ -704,9 +701,9 @@ class ClosureConjunctionLanguageFull(ClosureConjunctionLanguageBase):
         extension_indices = tuple(self._indices_refinement_extensions(selector=selector, blacklist=blacklist))
         num_predicates = len(self.predicates)
         selector_predicate_supports = self._predicate_validities[selector.validity, :].sum(axis=0)
-        extension_indices_remain = ones(num_predicates, bool)
+        extension_indices_remain = np.ones(num_predicates, bool)
         extension_indices_remain[list(selector.indices)] = False
-        refinement_covered = zeros(num_predicates, bool)  # dbgremove
+        refinement_covered = np.zeros(num_predicates, bool)  # dbgremove
         for extension_index in extension_indices:
             if extension_indices_remain[extension_index]:
                 refinement = selector.extend(extension_index)

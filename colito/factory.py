@@ -135,7 +135,7 @@ class FactoryMethod:
     def assign_parameters_from_parsed_arguments(self, arguments:Sequence[ParsedArgument], obj=None, type_resolver:TypeResolver=DEFAULT_TYPE_RESOLVER, ignore_extra_arguments:bool=False) -> Tuple[List[Any], Dict[str, Any], Dict[str, Any]]:
         missing = object()
         if len(self.parameters) < len(arguments) and not ignore_extra_arguments:
-            raise TypeError(f'While calling factory {self.name}: Provided {len(arguments)} while at most {len(self.parameters)} are expected.')
+            raise TypeError(f'While calling factory {self.name}: Provided {len(arguments)} arguments but at most {len(self.parameters)} are expected.')
         
         # Sort arguments based on their keys, if specified
         keyword_argument_preceded = False
@@ -376,25 +376,36 @@ class FactoryBase(metaclass=FactoryMeta):
     _factory_description:str
 
 
-class NoConversionError(RuntimeError):
+class NoConversionException(RuntimeError):
     pass
 
-def resolve_arguments(method, args, kwargs, resolver=DEFAULT_TYPE_RESOLVER, handler=None):
+def resolve_arguments(method, args, kwargs, resolver=DEFAULT_TYPE_RESOLVER, handler=None, kwarg_resolver=None, head_args=(None,)):
     """ Parse arguments to a function using annotations and inspection heuristics.
     
-        @param handler: a function that handles individual named parameters.
+        :param allow_unbound_kwargs: Raise an error if a provided kwarg cannot be bounded. Defaults to False.
+        :type allow_unbound_kwargs: bool  
+        :param handler: a function that handles individual named parameters.
             Has the signature: handler(name, value, parameter)
-            If the default conversion is to be used, it must raise a NoConversionError.
+            If the default conversion is to be used, it must raise a NoConversionException.
     """
     sig = inspect.signature(method)
     try:
-        bound_args = sig.bind_partial(None, *args, **kwargs)
+        if kwarg_resolver is None:
+            bound_args = sig.bind(*head_args, *args, **kwargs)
+        else:
+            bound_args_partial = sig.bind_partial(*head_args, *args, **kwargs)
+            kwargs_resolved = {}
+            for key, par in sig.parameters.items():
+                if key in bound_args_partial.arguments: continue
+                if par.kind in {inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL}: continue
+                info = SimpleNamespace(parameter=par, signature=sig, bound=bound_args_partial)
+                kwargs_resolved[key] = kwarg_resolver(key, info) 
+            bound_args = sig.bind(*head_args, *args, **kwargs, **kwargs_resolved)
         parameters = bound_args.signature.parameters
         arguments = bound_args.arguments
     except TypeError as e:
         text = describe_resolvable_arguments(method, exclude={'self',}, sep='\n')
         raise TypeError(f"Could not parse function {method}. Args: \n{text}") from e
-    args = []
     for name,val_in in arguments.items():
         parameter = parameters[name]
         try:
@@ -402,7 +413,7 @@ def resolve_arguments(method, args, kwargs, resolver=DEFAULT_TYPE_RESOLVER, hand
                 val = handler(name, val_in, parameter)
                 arguments[name] = val
                 continue
-        except NoConversionError:
+        except NoConversionException:
             pass
         if parameter.annotation is not inspect.Parameter.empty:
             parameter_type = parameter.annotation
@@ -417,7 +428,7 @@ def resolve_arguments(method, args, kwargs, resolver=DEFAULT_TYPE_RESOLVER, hand
 
 
 def default_string_argument_handler(name, value, parameter):
-    raise NoConversionError()
+    raise NoConversionException()
 
 def make_string_constructor(class_resolver):
     @classmethod

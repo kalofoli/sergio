@@ -16,11 +16,10 @@ import enum
 import numpy as np
 from numpy import ndarray
 
-from colito.collection import ClassCollection
+from colito.collection import ClassCollection, ClassCollectionFactoryRegistrar
 from colito.summaries import Summarisable, SummaryOptions, SummarisableList,\
-    DEFAULT_SUMMARY_OPTIONS
+    DEFAULT_SUMMARY_OPTIONS, SummarisableFromFields
 from colito.resolvers import make_enum_resolver
-from colito.factory import resolve_arguments, NoConversionError
 
 from builtins import staticmethod, property, classmethod
 from collections import namedtuple
@@ -35,81 +34,36 @@ MEASURES = ClassCollection('Measures')
 OPTIMISTIC_ESTIMATORS = ClassCollection('OptimisticEstimators')
 
 
-class Measure(Summarisable, ClassCollectionRegistrar):
+class Measure(Summarisable, ClassCollectionFactoryRegistrar):
     '''Abstract measure class'''
     __collection_tag__ = None
     __collection_factory__ = MEASURES
     
-    def __init__(self, data: EntityAttributes) -> None:
-        self._data = data
-
     def evaluate(self, selector: Selector) -> float:
         '''Evaluate the measure on a given selector'''
         raise NotImplementedError()
 
-    def summary_dict(self, options:SummaryOptions):
-        return dict()
-    
     @property
-    def summary_name(self):
+    def __summary_name__(self):
         return f'meas-{self.__class__.tag}'
     
-    @property
-    def data(self):
-        '''The data associated with this Measure'''
-        return self._data
-    
-    def __repr__(self):
-        dct = self.summary_dict(DEFAULT_SUMMARY_OPTIONS)
-        params_txt = ','.join(f'{key}={value}' for key,value in dct.items())
-        return f'<{self.__class__.__name__}({params_txt})>'
-
     @classmethod
-    def parse_argument(cls, name, value, parameter):
-        raise NoConversionError()
+    def from_kwargs(cls, **kwargs):
+        super().__init__()
 
-    @classmethod
-    def make_from_strings(cls, name, *args, **kwargs):
-        measure_cls = MEASURES.tags[name]
-        args_p, kwargs_p = resolve_arguments(measure_cls.__init__, args, kwargs, handler=measure_cls.parse_argument)
-        measure = measure_cls(*args_p[1:], **kwargs_p)
-        return measure
-        
-
-class OptimisticEstimator(Summarisable, ClassCollectionRegistrar):
+class OptimisticEstimator(Summarisable, ClassCollectionFactoryRegistrar):
     '''Abstract Optimistic Estimator class'''
     __collection_tag__ = None
     __collection_factory__ = OPTIMISTIC_ESTIMATORS
     
-    def __init__(self, data: EntityAttributes) -> None:
-        self._data = data
-
     def evaluate(self, selector: Selector) -> float:
         '''Evaluate an upper bound for the values of all refinements of the given selector'''
         raise NotImplementedError()
 
-    def summary_dict(self, options:SummaryOptions):
-        return dict()
-    
     @property
-    def summary_name(self):
+    def __summary_name__(self):
         return f'oest-{self.__class__.tag}'
     
-    @property
-    def data(self) -> EntityAttributes:
-        '''The data associated with this OptimisticEstimator'''
-        return self._data
-
-    @classmethod
-    def parse_argument(cls, name, value, parameter):
-        raise NoConversionError()
-
-    @classmethod
-    def make_from_strings(cls, name, *args, **kwargs):
-        oest_cls = OPTIMISTIC_ESTIMATORS.tags[name]
-        args_p, kwargs_p = resolve_arguments(oest_cls.__init__, args, kwargs, handler=oest_cls.parse_argument)
-        oest = oest_cls(*args_p[1:], **kwargs_p)
-        return oest
 
 class CachingScoreMixin:
     '''Caching framework for selector-based measures and optimistic estimators'''
@@ -143,7 +97,7 @@ class CachingScoreMixin:
     def set_cache(cls, selector: Selector, value: float) -> None:
         selector.cache[cls.selector_property_name()] = value
 
-class MeasureCoverage(CachingScoreMixin, Measure):
+class MeasureCoverage(CachingScoreMixin, SummarisableFromFields, Measure):
     __collection_title__ = 'Coverage'
     __collection_tag__ = 'coverage'
 
@@ -151,7 +105,7 @@ class MeasureCoverage(CachingScoreMixin, Measure):
         idl: np.ndarray = selector.validity
         return idl.mean()
 
-class OptimisticEstimatorCoverage(CachingScoreMixin, OptimisticEstimator):
+class OptimisticEstimatorCoverage(CachingScoreMixin, SummarisableFromFields, OptimisticEstimator):
     __collection_title__ = 'Coverage'
     __collection_tag__ = 'coverage'
     

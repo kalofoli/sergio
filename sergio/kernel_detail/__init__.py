@@ -10,7 +10,7 @@ Created on Oct 3, 2019
 import grakel
 
 from cofi.summarisable import SummarisableAsDict, SummaryOptions
-from cofi.factory import NoConversionError, resolve_arguments
+from cofi.factory import resolve_arguments
 from abc import ABCMeta, abstractmethod
 import numpy as np
 from typing import Sequence

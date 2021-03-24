@@ -4,8 +4,7 @@ Created on May 27, 2018
 @author: janis
 '''
 
-from typing import NamedTuple, List
-from collections import Iterable
+from typing import NamedTuple, List, Iterable
 
 import numpy as np
 from numpy import ndarray

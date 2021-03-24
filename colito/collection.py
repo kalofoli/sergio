@@ -161,6 +161,36 @@ class ClassCollectionRegistrar(metaclass=ClassCollectionRegistrarMeta):
     __collection_tag__ = None
     __collection_factory__ = None
 
+
+class ClassCollectionFactoryRegistrar(ClassCollectionRegistrar):
+    __collection_tag__ = None
+    __collection_factory__ = None
+    @classmethod
+    def __parse_string_argument__(cls, name, value, parameter):
+        from colito.factory import NoConversionException
+        raise NoConversionException()
+    @classmethod
+    def make_from_strings(cls, name, *args, **kwargs):
+        tag_cls, args_p, kwargs_p = cls.parse_string_arguments(name, args, kwargs)
+        inst = tag_cls(*args_p[1:], **kwargs_p)
+        return inst
+    @classmethod
+    def make_from_string_parts(cls, name, args=(), kwargs={}, kwarg_resolver=None):
+        tag_cls, args_p, kwargs_p = cls.parse_string_arguments(name, args, kwargs, kwarg_resolver=kwarg_resolver)
+        inst = tag_cls(*args_p[1:], **kwargs_p)
+        return inst
+    
+    @classmethod
+    def parse_string_arguments(cls, name, args, kwargs, kwarg_resolver=None):
+        from colito.factory import resolve_arguments
+        tag_cls = cls.__collection_factory__.tags[name]
+        if kwarg_resolver is not None:
+            _resolver = lambda *args, **kwargs: kwarg_resolver(tag_cls, *args, **kwargs)
+        else:
+            _resolver = None
+        args_p, kwargs_p = resolve_arguments(tag_cls.__init__, args, kwargs, handler=tag_cls.__parse_string_argument__, kwarg_resolver=_resolver)
+        return tag_cls, args_p, kwargs_p
+        
     
 if __name__ == "__main__":
     import doctest

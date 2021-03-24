@@ -4,6 +4,9 @@ Created on May 13, 2018
 @author: janis
 '''
 
+#import warnings
+#warnings.filterwarnings("error")
+
 from datetime import datetime
 from typing import Dict, Any, Iterable
 from pandas import DataFrame
@@ -23,9 +26,8 @@ from sergio.predicates import Prediciser
 from sergio import FileManager
 from sergio.data.factory import DatasetFactory
 from colito.cache import FileCache, DEFAULT_FILE_CACHE
-
-#from .control import Controller
-
+from sergio.kernels import Kernel
+from sergio.kernels.gramian import GramianFromDataset
 
 log = getModuleLogger(__name__) #pylint: disable=invalid-name
 
@@ -62,6 +64,8 @@ class Computation(SummarisableFromFields):
         self._search = None
         self._oest = None
         self._measure = None
+        self._gramian = None
+        self._kernel = None
         self._tag = tag if tag is not None else str(datetime.timestamp(datetime.now()))
         self._subgroups = []
         self._log = log
@@ -128,6 +132,14 @@ class Computation(SummarisableFromFields):
         return self._oest
     
     @property
+    def kernel(self):
+        return self._kernel
+    
+    @property
+    def gramian(self):
+        return self._gramian
+
+    @property
     def resume(self):
         return self._resume
     
@@ -185,6 +197,16 @@ class Computation(SummarisableFromFields):
         self._log.info(f'Loaded language {name} {self.language} ({len(self.language.predicates)} predicates)')
         return self
     
+    def _require(self, attribute, loadable):
+        '''Complain if not set'''
+        try:
+            val = getattr(self, attribute)
+        except AttributeError:
+            raise ValueError(f'Loading a {loadable} requires an attribute {attribute} which is not available in {self.__class__}.')
+        if val is None:
+            raise ValueError(f'Loading a {loadable} requires {attribute} to be set.')
+        return val
+    
     def load_measure(self, name, **kwargs):
         """
         >>> import sergio.scores.scalars
@@ -198,7 +220,13 @@ class Computation(SummarisableFromFields):
         self._log.info(f'Loading measure {name}.')
         if self.dataset is None:
             raise ValueError('No dataset is set; scores need a dataset in order to be loaded.')
-        meas = Measure.make_from_strings(name, self.dataset, **kwargs)
+        
+        cls = Measure.__collection_factory__.tags[name]
+        if hasattr(cls, 'from_dataset'):
+            meas = cls.from_dataset(self.dataset, **kwargs)
+        else:
+            resolver = lambda cls, kwarg, info: self._require(kwarg, 'measure')
+            meas = Measure.make_from_string_parts(name, kwargs=kwargs, kwarg_resolver=resolver)
         #oest = self.optimistic_estimator
         #if isinstance(meas, CallbackSubgraphEvaluator) and oest is not None and isinstance(oest, CallbackSubgraphEvaluator):  # Couple the two
         #    self._log.info(f'Coupling measure {meas} with optimistic estimator {oest}.')
@@ -217,7 +245,12 @@ class Computation(SummarisableFromFields):
         self._log.info(f'Loading optimistic estimator {name}.')
         if self.dataset is None:
             raise ValueError('No dataset is set; scores need a dataset in order to be loaded.')
-        oest = OptimisticEstimator.make_from_strings(name, self.dataset, **kwargs)
+        cls = OptimisticEstimator.__collection_factory__.tags[name]
+        if hasattr(cls, 'from_dataset'):
+            oest = cls.from_dataset(self.dataset, **kwargs)
+        else:
+            resolver = lambda cls, kwarg, info: self._require(kwarg, 'optimistic estimator')
+            oest = Measure.make_from_string_parts(name, kwargs=kwargs, kwarg_resolver=resolver)
         #meas = self.measure
         #if isinstance(oest, CallbackSubgraphEvaluator) and meas is not None and isinstance(meas, CallbackSubgraphEvaluator):  # Couple the two
         #    self._log.info(f'Coupling optimistic estimator {oest} with measure {meas}.')
@@ -236,35 +269,33 @@ class Computation(SummarisableFromFields):
         self._log.info(f'Loaded {len(subgroups)} subgroups. Current list: {to_stuple(self.subgroups,join=",")}.')
         return self
     
-    def load_attributes(self, attributes:DataFrame, kinds='auto', selected=True):
+    def load_kernel(self, name, **kwargs):
         """ Append attributes to the dataset.
-        
-        @param kinds: The kind of each added attribute. 
-            Can be either a single string or AttributeKind, in which case it applies to all, or a list of them.
-            The string 'auto' can also be provided.  
-        @param selected: Whether the added attributes should be used for predicisation.
-            A single string or bool, which applies to all of them, or a list of them. 
+        >>> import sergio.kernels.euclidean
+        >>> c = Computation(cache=None, file_manager=FileManager('datasets'))
+        >>> c.load_kernel('rbf').kernel
+        <RadialBasisFunctionKernel(sigma=1,kind=<Kind.EXP_QUAD: 1>)>
         """
-        def parse_bool(what):
-            if isinstance(selected, str):
-                value = DEFAULT_TYPE_RESOLVER.resolve(bool, what)
-            elif isinstance(what, bool):
-                value = selected
-            else:
-                value = bool(what)
-            return value
-        if isinstance(selected, str):
-            parsed_selected = parse_bool(selected)
-        elif isinstance(selected, Iterable):
-            parsed_selected = tuple(map(parse_bool, selected))
-        else:
-            raise TypeError(f'Could not parse a boolean or list of bools from {selected}.')
-        attributes, kinds, selected = self.dataset.add_attributes(attributes=attributes, kinds=kinds, selected=parsed_selected)
-        log.info(f'Added {attributes.shape[0]}x{attributes.shape[1]}, kinds: {kinds} and selected: {selected}.')
-        log.info(f'Updated dataset: {self.dataset}')
-        
+        log.info(f'Loading kernel {name}.')
+        kern = Kernel.make_from_strings(name, **kwargs)
+        self._kernel = kern 
+        log.info(f'Set kernel to {kern}')
         return self
         
+    def compute_kernel(self, store:bool = True):
+        '''
+        >>> import sergio.scores.scalars
+        >>> import sergio.kernels.euclidean
+        >>> c = Computation(cache=None, tag='doctest', file_manager=FileManager('datasets'))\\
+        ...     .load_dataset('toy-array:circledots').load_kernel('rbf')
+        >>> G = c.compute_kernel().gramian
+        >>> G.eigenvals.shape[0], G.dimension, G.rank
+        (147, 147, 147)
+        >>> 
+        '''
+        self._gramian = GramianFromDataset(self.dataset, self.kernel)
+        return self
+
     
     def optimise(self, k=1, depths=6,approximation_factor=1, state_scoring=None,refinement_scoring=None, track_results=False):
         r'''
@@ -286,7 +317,7 @@ class Computation(SummarisableFromFields):
                 kwargs['visitor'] = dfs_visitor
                 return DepthFirstSearch(*args,**kwargs)
         else:
-            dfs = DepthFirstSearch 
+            dfs = DepthFirstSearch
         
         iddfs = IterativeDeepening(self._language, self._measure, self._oest,
                                    k=k, depths=depths,
@@ -298,7 +329,7 @@ class Computation(SummarisableFromFields):
         iddfs.try_add_selectors(self._subgroups)
         aborted = False
         try:
-            iddfs.run() 
+            iddfs.run()
         except KeyboardInterrupt as _:
             self._resume = iddfs.states
             aborted = True
