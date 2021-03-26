@@ -4,6 +4,7 @@ Created on May 24, 2018
 @author: janis
 '''
 
+import typing
 import logging
 from collections import namedtuple
 from logging import getLogger, _levelToName, _nameToLevel, getLevelName as _getLevelName,\
@@ -215,8 +216,8 @@ class _RateTracker:
         self._default.mark()
     
     def mark_level(self, lvl):
-        level_name = self._resolve_level_entry(lvl)
-        return self.mark_level_name(level_name)
+        level_entry = self._resolve_level_entry(lvl)
+        level_entry.mark()
     
     def _resolve_level_entry(self, lvl):
         level_name = resolve_level_name(lvl)
@@ -286,7 +287,7 @@ class RateLimitedLogger(LoggerAdapter):
         self.level_name = self._make_tracker(level_name)
         return self.level_name
         
-    def __dir__(self): return tuple(map(str.lower, _nameToLevel.keys())) + tuple(self.__dict__.keys())
+    def __dir__(self): return sorted(tuple(map(str.lower, _nameToLevel.keys())) + tuple(self.__class__.__dict__.keys()))
 
     def isEnabledFor(self, level):
         return self.delay[level].ison
@@ -331,12 +332,14 @@ class ColitoLogger(LoggerAdapter):
     >>> log.rlim.ison.info
     True
     '''
+    LOGGER_NAMES:typing.Set[str] = set()
     
     def __init__(self, logger, extra=None, *args, **kwargs) -> None:
         super().__init__(logger, extra=extra, *args, **kwargs)
         self.ison = LevelIsOn(self)
         self._last_standard = None
         self.rlim = RateLimitedLogger(self)
+        self.LOGGER_NAMES.add(logger.name)
         
     def add_stderr(self, fmt=None):
         from logging import StreamHandler
@@ -367,7 +370,7 @@ class ColitoLogger(LoggerAdapter):
     def _make_fn(self, fn_name):
         level = resolve_level_value(fn_name, exact=True, ignore_case = True)
         def tracker(*args, **kwargs):
-            self.logger.log(level, *args, **kwargs)
+            self.log(level, *args, **kwargs)
         tracker.__name__ = fn_name
         return tracker
 
@@ -375,10 +378,7 @@ class ColitoLogger(LoggerAdapter):
     @classmethod
     def default_format(cls):
         len_level = max(len(key) for key in _nameToLevel.keys())
-        if cls.LOGGERS:
-            len_name = max(len(logger.name) for logger in cls.LOGGERS.values())
-        else:
-            len_name = ''
+        len_name = max(map(len, cls.LOGGER_NAMES)) if cls.LOGGER_NAMES else ''
         return f'%(levelname)-{len_level}s %(name)-{len_name}s %(asctime)s||%(message)s'
 
     def attach_standard(self, level_out = logging.INFO, level_err=logging.ERROR):
@@ -394,6 +394,16 @@ class ColitoLogger(LoggerAdapter):
             sys.stderr = DEFAULT_STREAMS.stderr
         else:
             sys.stdout, sys.stderr = self._last_standard
+
+    def log(self, level, msg, *args, **kwargs):
+        """
+        Delegate a log call to the underlying logger, after adding
+        contextual information from this adapter instance.
+        """
+        if self.rlim.isEnabledFor(level):
+            self.rlim.delay.mark_level(level)
+            msg, kwargs = self.process(msg, kwargs)
+            self.logger.log(level, msg, *args, **kwargs)
         
     def __enter__(self):
         level = self.getLevel()
@@ -404,13 +414,25 @@ class ColitoLogger(LoggerAdapter):
         
 
 _USE_DEFAULT_FACTORY = NamedUniqueConstant('USE_DEFAULT_FACTORY')
-DEFAULT_ADAPTER_FACTORY = None
+DEFAULT_ADAPTER_FACTORY = ColitoLogger
 def getModuleLogger(module_name, factory = _USE_DEFAULT_FACTORY):
     '''Create a Logger instance for the given module name.
     @param module_name The name of the module, typically __name__.
     '''
     tag = module_name.split('.')[-1]
     logger = getLogger(tag)
+    if factory is _USE_DEFAULT_FACTORY:
+        factory = DEFAULT_ADAPTER_FACTORY
+    if factory is not None:
+        return factory(logger)
+    else:
+        return logger
+
+def getRootLogger(factory = _USE_DEFAULT_FACTORY):
+    '''Create a Logger instance for the given module name.
+    @param module_name The name of the module, typically __name__.
+    '''
+    logger = getLogger()
     if factory is _USE_DEFAULT_FACTORY:
         factory = DEFAULT_ADAPTER_FACTORY
     if factory is not None:

@@ -6,6 +6,7 @@ Created on Mar 10, 2021
 
 
 import typing
+from types import SimpleNamespace
 EntryType = typing.TypeVar('EntryType')
 class NamedDictView(typing.Generic[EntryType]):
     def __init__(self, name, dct, fmt_key=repr, fmt_val=repr):
@@ -185,7 +186,7 @@ class ClassCollectionFactoryRegistrar(ClassCollectionRegistrar):
         from colito.factory import resolve_arguments
         tag_cls = cls.__collection_factory__.tags[name]
         if kwarg_resolver is not None:
-            _resolver = lambda *args, **kwargs: kwarg_resolver(tag_cls, *args, **kwargs)
+            _resolver = lambda kwarg, info: kwarg_resolver(kwarg, SimpleNamespace(cls=cls,**info.__dict__))
         else:
             _resolver = None
         args_p, kwargs_p = resolve_arguments(tag_cls.__init__, args, kwargs, handler=tag_cls.__parse_string_argument__, kwarg_resolver=_resolver)

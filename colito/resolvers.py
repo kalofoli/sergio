@@ -27,7 +27,6 @@ class EnumResolver:
     
     def __init__(self, cls, ignore_case=True):
         self._cls = cls
-        self._is_flag = issubclass(cls, enum.Flag)
         self._ignore_case = ignore_case
         
         self._fn_normalise=lambda x:x.lower() if ignore_case else lambda x:x

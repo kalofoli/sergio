@@ -91,7 +91,8 @@ class DefaultTypeResolver(TypeResolver):
             else:
                 raise ValueError(f'Could not parse a boolean from {txt}.')
         elif issubclass(cls, enum.Enum):
-            factory = cls.__getitem__
+            from colito.resolvers import make_enum_resolver
+            factory = make_enum_resolver(cls).resolve
         return factory(txt)
 
 
@@ -398,6 +399,7 @@ def resolve_arguments(method, args, kwargs, resolver=DEFAULT_TYPE_RESOLVER, hand
             for key, par in sig.parameters.items():
                 if key in bound_args_partial.arguments: continue
                 if par.kind in {inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL}: continue
+                if par.default is not inspect.Parameter.empty: continue
                 info = SimpleNamespace(parameter=par, signature=sig, bound=bound_args_partial)
                 kwargs_resolved[key] = kwarg_resolver(key, info) 
             bound_args = sig.bind(*head_args, *args, **kwargs, **kwargs_resolved)
@@ -405,7 +407,7 @@ def resolve_arguments(method, args, kwargs, resolver=DEFAULT_TYPE_RESOLVER, hand
         arguments = bound_args.arguments
     except TypeError as e:
         text = describe_resolvable_arguments(method, exclude={'self',}, sep='\n')
-        raise TypeError(f"Could not parse function {method}. Args: \n{text}") from e
+        raise TypeError(f"Could not parse function {method} because of {e}. Args: \n{text}") from e
     for name,val_in in arguments.items():
         parameter = parameters[name]
         try:

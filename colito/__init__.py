@@ -39,3 +39,4 @@ class NamedUniqueConstant:
         self._name = name
     def __repr__(self): return self._name
     def __eq__(self, other): return self is other
+    def __hash__(self): return id(self)
