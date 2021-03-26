@@ -131,14 +131,14 @@ class RadialBasisFunctionKernel(ShiftInvariantKernel):
     __kernel_params__ = ['sigma','kind']
     
     class Kind(enum.Enum):
-        EXP_QUAD = enum.auto()
+        GAUSSIAN = enum.auto()
+        EXP_QUAD = GAUSSIAN
         EXP = enum.auto()
         INV_QUADRATIC = enum.auto()
-        GAUSSIAN = EXP_QUAD
         
     KIND_RESOLVER = make_enum_resolver(Kind)
 
-    def __init__(self, sigma:float=1, kind:Kind="exp_quad"):
+    def __init__(self, sigma:float=1, kind:Kind="gaussian"):
         self.sigma = sigma
         self.kind = self.KIND_RESOLVER.resolve(kind)
         

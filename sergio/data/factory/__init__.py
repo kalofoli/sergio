@@ -29,7 +29,8 @@ from sergio.data.bundles.entities import EntityAttributes,\
     EntityAttributesWithTarget, EntityAttributesWithArrayTarget,\
     EntityAttributesWithAttributeTarget
 import enum
-from sergio.data.bundles.structures import EntityAttributesWithStructures
+from sergio.data.bundles.structures import EntityAttributesWithStructures,\
+    EntityAttributesWithGraphs
 
 
 
@@ -211,6 +212,20 @@ class DatasetFactory(FactoryBase):
         
         return db
     
+    @factorymethod('morris')
+    def load_morris(self, name:str, with_oidx:bool=True, directed:bool=None):
+        '''Load the Morris database dataset.
+        
+        >>> df = DatasetFactory(file_manager = FileManager(paths={FileKinds.DATA:'datasets/'}), cache=None)
+        >>> df.load_morris('MUTAG', True)
+        <EntityAttributesWithGraphs[MUTAG](188x1/1)>
+        '''
+        from sergio.data.factory.morris import MorrisLoader
+        data_home = self._fm.get_kind_path(FileKinds.DATA_MORRIS)
+        ml = MorrisLoader(data_home=data_home)
+        dsm = ml.load_dataset(name)
+        ea = EntityAttributesWithGraphs.from_morris(**dsm.__dict__, with_oidx=with_oidx, directed=directed)
+        return ea
     
     
     _get_dataset = FactoryGetter(classmethod=False)

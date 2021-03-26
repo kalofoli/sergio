@@ -10,7 +10,7 @@ import pandas as pd
 from sergio.scores import Measure, OptimisticEstimator, CachingScoreMixin
 from sergio.kernels import Kernel
 from sergio.data import EntityAttributesWithAttributeTarget
-from colito.summaries import SummaryFieldsAppend
+from colito.summaries import SummaryFieldsAppend, SummarisableFromFields
 import enum
 from colito.resolvers import make_enum_resolver
 from sergio.kernels.gramian import Gramian
@@ -50,7 +50,7 @@ class ComparisonMode(enum.Enum):
     ANOMALY = enum.auto()
 COMPARISON_RESOLVER = make_enum_resolver(ComparisonMode)
 
-class MaximumMeanDeviationScoreMixin(CachingScoreMixin):
+class MaximumMeanDeviationScoreMixin(CachingScoreMixin, SummarisableFromFields):
     __collection_title__ = 'Maximum Mean Deviation'
     __summary_fields__ = SummaryFieldsAppend(('comparison',))
     @property
@@ -58,7 +58,7 @@ class MaximumMeanDeviationScoreMixin(CachingScoreMixin):
     @property
     def dimension(self): return self.gramian.dimension
     @property
-    def rank(self): return self.gramian.rand
+    def rank(self): return self.gramian.rank
     @property
     def gramian(self): return self._gramian
     @property
@@ -102,7 +102,7 @@ class MeasureMaximumMeanDeviation(MaximumMeanDeviationScoreMixin, Measure):
         x: np.ndarray = selector.validity
         l, S = self._eigs
         m,n = x.sum(), S.shape[0]
-        if m:
+        if m>0 and m!=n:
             fm = m*(n-m)/n if self._comparison == ComparisonMode.CONTRASTIVE else m
             xtv = S[x,:].sum(0)
             quant_paren = xtv-m*self._c_i
@@ -112,7 +112,7 @@ class MeasureMaximumMeanDeviation(MaximumMeanDeviationScoreMixin, Measure):
             J = 0
         return J
     
-class OptimisticEstimatorMaximumMeanDeviationSingleDirection(MaximumMeanDeviationScoreMixin, Measure):
+class OptimisticEstimatorMaximumMeanDeviationSingleDirection(MaximumMeanDeviationScoreMixin, OptimisticEstimator):
     ''' 
 
     .. note:: This value results by assigning the (squared) lengths of a unit vector parallel to each eigenvector (starting with the largest eigenvalue one),
@@ -122,7 +122,7 @@ class OptimisticEstimatorMaximumMeanDeviationSingleDirection(MaximumMeanDeviatio
        
     '''
     __collection_title__ = 'Maximum Mean Deviation using a single direction bound'
-    __collection_tag__ = "mmd-r1"
+    __collection_tag__ = "mmd-sd"
     
     def __init__(self, gramian, comparison:ComparisonMode, max_rank:int=None):
         super().__init__(gramian, comparison)
@@ -174,7 +174,11 @@ class OptimisticEstimatorMaximumMeanDeviationSingleDirection(MaximumMeanDeviatio
         idl_sel: np.ndarray = selector.validity
         n = self.dimension
         rank = self.max_rank
-        m = min(idl_sel.sum(), n-1)
+        m = idl_sel.sum()
+        if m == 0:
+            return 0
+        elif m == n:
+            m = n-1
         debug = self._debug
         contrastive = self.contrastive
         if debug: cos_sq = np.empty((m,rank))

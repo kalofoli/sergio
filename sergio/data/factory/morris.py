@@ -6,7 +6,7 @@ Created on Feb 1, 2021
 import os
 import zipfile
 import re
-from sergio.sd.datasets import read_url, save_url
+from . import read_url, save_url
 from collections import Counter
 from io import TextIOWrapper
 import numpy
@@ -27,13 +27,13 @@ class MorrisLoader():
     
     def list_datasets(self):
         if self.metadata is None:
-            self.get_metadata()
+            self.load_metadata()
         return list(self.metadata.index)
 
     @property
     def meta_file(self): return os.path.join(self.data_home,'datasets.csv')
-    def fetch_dataset(self, name, cache=True, ):
-        meta = self.get_metadata()
+    def load_dataset(self, name):
+        meta = self.load_metadata()
         url = meta.loc[name].download
         with self.fetch_zip_cached(url, name) as zip_ref:
             log.info(f'Parsing dataset {name}')
@@ -53,11 +53,11 @@ class MorrisLoader():
             zip_fid = zipfile.ZipFile(file_name,'r')
         return zip_fid
 
-    def get_metadata(self, cache=True, force_reload=False):
+    def load_metadata(self, cache=True, force_reload=False):
         df = None
         meta_file = self.meta_file
         def download():
-            df = self.download_metadata(simplify=True)
+            df = self._download_metadata(simplify=True)
             if cache and meta_file is not None:
                 df.to_csv(meta_file, sep='\t')
             return df
@@ -78,7 +78,7 @@ class MorrisLoader():
         return self.metadata
         
     @classmethod
-    def download_metadata(cls, simplify=True):
+    def _download_metadata(cls, simplify=True):
         from lxml import etree
     
         data = read_url(cls.url)

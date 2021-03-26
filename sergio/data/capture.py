@@ -428,7 +428,6 @@ class DatasetCapture:
                 controls.w_defs.append(w_def)
 
         def make_par_setter(name):
-            @capture_output
             def setter(value):
                 setattr(self._state.last, name, value)
             return setter

@@ -62,9 +62,12 @@ class EntityAttributes(SummarisableFromFields):
         self._attributes_selected = np.ones(self.num_attributes_total, bool)
         self.attribute_selection = attribute_selection
         self._attribute_info = [None]*self.num_attributes_total
-        defaulted_attribute_info = {None:None}
-        defaulted_attribute_info.update(attribute_info)
-        self.attribute_info = defaulted_attribute_info
+        if isinstance(attribute_info, dict):
+            defaulted_attribute_info = {None:None}
+            defaulted_attribute_info.update(attribute_info)
+            self.attribute_info = defaulted_attribute_info
+        else:
+            self.attribute_info = attribute_info
 
     def _updated_columns_from_spec(self, spec):
         '''Parse an input of specifiers for each column.
@@ -92,7 +95,7 @@ class EntityAttributes(SummarisableFromFields):
                 else:
                     idx = data.columns.get_loc(key)
                 set_pair(idx, spec)
-        elif isinstance(spec, Sequence):
+        elif isinstance(spec, (Sequence, np.ndarray)):
             indices = None
             values = tuple(spec)
             if len(values) != self.num_attributes_total:

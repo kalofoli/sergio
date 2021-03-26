@@ -525,7 +525,7 @@ class DFSResultLogger(DFSVisitor):
             results = []
         self._result_history = self.UpdateList(results)
     def result_added(self, state:DFSState, result_old:'LanguageTopKBranchAndBound.Result'):
-        update = self.Update(new=state, old=result_old, statistics=state.search.statistics._copy(), time=time.time())
+        update = self.Update(new=state, old=result_old, statistics=state.search.statistics.copy(), time=time.time())
         self._result_history.append(update)
     result_history = property(lambda self:self._result_history, None, 'Results tracked so far.')
 

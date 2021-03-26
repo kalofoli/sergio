@@ -63,11 +63,14 @@ class AttributeInfoFactory:
         '''
         data = self._data
         series = data.iloc[:,index]
-        if spec is None:
-            kind = self._infer_kind(series)
+        if isinstance(spec, AttributeInfo):
+            cls_attr = spec.__class__
         else:
-            kind = self.resolve_kind(spec)
-        cls_attr = self.__map_kind_to_class[kind]
+            if spec is None:
+                kind = self._infer_kind(series)
+            else:
+                kind = self.resolve_kind(spec)
+            cls_attr = self.__map_kind_to_class[kind]
         return cls_attr(data, index)
 
     @classmethod

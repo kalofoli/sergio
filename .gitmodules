@@ -1,0 +1,3 @@
+[submodule "sergio/kernels/details/wwl"]
+	path = sergio/kernels/details/wwl
+	url = https://github.com/BorgwardtLab/WWL

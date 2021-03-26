@@ -41,7 +41,17 @@ class Kernel(SummarisableAsDict, ClassCollectionFactoryRegistrar):
     def copy(self):
         self.__class__(**self.get_params())
         
+    @property
+    def X(self): return self._X
 
+class PreprocessMixin:
+    def fit(self, X):
+        self._X = self.parse_input(X)
+        return self
+    @property
+    def X(self): return self._X
+    @X.setter
+    def X(self, what): self._X = self.parse_input(what)
 
 if __name__ == '__main__':
     import doctest

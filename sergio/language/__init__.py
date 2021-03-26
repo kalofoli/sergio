@@ -69,17 +69,20 @@ class SelectorParserBase(Generic[SelectorType, LanguageType]):
 
 class Selector():
     '''Selector for a set of entities'''
+    def __init__(self, cache: CacheSpecType=True):
+        self._cache: Cache = Cache.from_spec(cache)
+        
     @property
     def validity(self) -> np.ndarray:
         '''A logical of those entities that validate the selector'''
         raise NotImplementedError()
 
-class LanguageSelector(Generic[LanguageType]):
+class LanguageSelector(Generic[LanguageType], Selector):
     '''Language-aware selector for a set of entities'''
 
     def __init__(self, language: LanguageType, cache: CacheSpecType=True) -> None:
+        super().__init__(cache=cache)
         self._language: LanguageType = language
-        self._cache: Cache = Cache.from_spec(cache)
 
     @property
     def refinements(self) -> Sequence['SelectorBase']:
@@ -99,8 +102,8 @@ class LanguageSelector(Generic[LanguageType]):
 
 class StaticSelector(Selector):
 
-    def __init__(self, validity:np.ndarray) -> None:
-        super().__init__()
+    def __init__(self, validity:np.ndarray, cache: CacheSpecType=True) -> None:
+        super().__init__(cache=cache)
         self._validity:np.ndarray = validity
         
     @property
