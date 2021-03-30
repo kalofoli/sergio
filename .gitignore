@@ -2,3 +2,5 @@
 /.pydevproject
 **/__pycache__
 /docs/build/
+/datasets/keel/keel-datasets.csv
+/cache
