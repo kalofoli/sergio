@@ -418,12 +418,6 @@ class Computation(SummarisableFromFields):
         import json
         jsonstr = json.dumps(summary, indent=indent, separators=separators)
         return jsonstr
-#     
-#     def subgroups_to_json(self, indent=4, separators=(',', ': '), parts=SummaryParts.BASIC):
-#         import json
-#         summary_dict = self.subgroups_to_dict(parts=parts)
-#         jsonstr = json.dumps(summary_dict, indent=indent, separators=separators)
-#         return jsonstr
 
     def subgroups_to_dataframe(self, parts) -> DataFrame:
         from pandas.io.json import json_normalize

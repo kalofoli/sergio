@@ -355,6 +355,13 @@ class ColitoLogger(LoggerAdapter):
             hdlr = hdlrs[0]
         return hdlr
 
+    def add_file(self, file):
+        from logging import FileHandler
+        logger = self.logger
+        fh = FileHandler(file)
+        logger.addHandler(fh)
+        return fh
+
     def setFormatter(self, fmt=None):
         if fmt is None:
             fmt = logging.Formatter(self.default_format())

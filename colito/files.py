@@ -33,7 +33,7 @@ class FileManager:
         self._allow_default = allow_default
 
     def _resolve_kind(self, kind):
-        return kind
+        raise NotImplementedError('Override')
     
     @property
     def default_path(self): return self._default_path
