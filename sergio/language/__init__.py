@@ -512,6 +512,9 @@ class ClosureConjunctionLanguageBase(ConjunctionLanguage):
         self._predicate_validities: np.ndarray = np.array(np.stack([predicate.validate() for predicate in self.predicates], axis=1), order='F')
         self._root: ClosureConjunctionSelector = ClosureConjunctionSelector(self, [])
         self._predicate_supports: np.ndarray = self._predicate_validities.sum(axis=0)
+    
+    @property
+    def predicate_validities(self): return self._predicate_validities
         
     def refine(self, selector: ClosureConjunctionSelector, greater_only: Optional[bool]=False,
                blacklist: Optional[PredicateOrIndexCollectionType]=None) -> Iterator[ClosureConjunctionSelector]:

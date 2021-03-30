@@ -256,11 +256,7 @@ class Computation(SummarisableFromFields):
     def parse_measure(self, name, dataset=UNSET, **kwargs):
         cls = Measure.__collection_factory__.tags[name]
         resolver = self._make_resolver(f'measure {cls.__name__}', dataset=dataset)
-        if hasattr(cls, 'from_dataset'):
-            ds = resolver('dataset')
-            meas = cls.from_dataset(ds, **kwargs)
-        else:
-            meas = Measure.make_from_string_parts(name, kwargs=kwargs, kwarg_resolver=resolver)
+        meas = Measure.make_from_string_parts(name, kwargs=kwargs, kwarg_resolver=resolver)
         return meas
     
     def load_measure(self, name, **kwargs):
@@ -281,11 +277,7 @@ class Computation(SummarisableFromFields):
     def parse_optimistic_estimator(self, name, dataset=UNSET, **kwargs):
         cls = OptimisticEstimator.__collection_factory__.tags[name]
         resolver = self._make_resolver(f'optimistic estimator {cls.__name__}', dataset=dataset)
-        if hasattr(cls, 'from_dataset'):
-            ds = resolver('dataset')
-            oest = cls.from_dataset(ds, **kwargs)
-        else:
-            oest = OptimisticEstimator.make_from_string_parts(name, kwargs=kwargs, kwarg_resolver=resolver)
+        oest = OptimisticEstimator.make_from_string_parts(name, kwargs=kwargs, kwarg_resolver=resolver)
         return oest
 
     def load_optimistic_estimator(self, name, **kwargs):

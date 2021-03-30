@@ -48,7 +48,7 @@ def save_url(url, file):
                     return
                 fid.write(data)
 
-_DATASET_NAMES = {'moondot': 'dataset-moondot.csv'}
+_DATASET_NAMES = {'moondot': 'dataset-moondot.csv', 'titanic': 'table-titanic.csv'}
 
 
 class DataBundle:
@@ -211,6 +211,33 @@ class DatasetFactory(FactoryBase):
             db = pickle.load(fid)
         
         return db
+
+    @factorymethod('titanic')
+    def load_titanic(self, target:str='survived'):
+        '''Load the titanic dataset'''
+        file = _DATASET_NAMES['titanic']
+        with self.open(file, 'r') as fid:
+            ds = pandas.read_csv(fid,na_values='?',dtype={'embarked':'category'})
+        ea = EntityAttributesWithAttributeTarget(
+            attribute_data=ds,
+            attribute_info={'id':'index','pname':'name','survived':'boolean', 'class':'categorical'},
+            name='titanic',target=target
+        )
+        return ea
+    
+    @factorymethod('keel')
+    def load_keel(self, name:str):
+        '''Load the Morris database dataset.
+        
+        >>> df = DatasetFactory(file_manager = FileManager(paths={FileKinds.DATA:'datasets/'}), cache=None)
+        >>> df.load_keel('german')
+        <EntityAttributesWithAttributeTarget[german](999x20/21) target: Customer(category@20)>
+        '''
+        from sergio.data.factory.repositories import KeelLoader
+        data_home = self._fm.get_kind_path(FileKinds.DATA_KEEL)
+        kl = KeelLoader(data_home=data_home)
+        ea = kl.load_dataset(name)
+        return ea
     
     @factorymethod('morris')
     def load_morris(self, name:str, with_oidx:bool=True, directed:bool=None):
@@ -220,7 +247,7 @@ class DatasetFactory(FactoryBase):
         >>> df.load_morris('MUTAG', True)
         <EntityAttributesWithGraphs[MUTAG](188x1/1)>
         '''
-        from sergio.data.factory.morris import MorrisLoader
+        from sergio.data.factory.repositories import MorrisLoader
         data_home = self._fm.get_kind_path(FileKinds.DATA_MORRIS)
         ml = MorrisLoader(data_home=data_home)
         dsm = ml.load_dataset(name)

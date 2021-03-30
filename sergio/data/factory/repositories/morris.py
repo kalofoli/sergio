@@ -6,77 +6,24 @@ Created on Feb 1, 2021
 import os
 import zipfile
 import re
-from . import read_url, save_url
 from collections import Counter
 from io import TextIOWrapper
 import numpy
 from types import SimpleNamespace as SNS
 import pandas
 from colito.logging import getLogger
+from sergio.data.factory.repositories.loader import RepositoryLoader
+from sergio.data.factory import read_url
 
 log = getLogger(__name__)
 
-class MorrisLoader():
+class MorrisLoader(RepositoryLoader):
+    __name__ = 'morris'
     
     url = 'https://ls11-www.cs.tu-dortmund.de/staff/morris/graphkerneldatasets'
-    
-    metadata = None
-    
-    def __init__(self, data_home='.'):
-        self.data_home = data_home
-    
-    def list_datasets(self):
-        if self.metadata is None:
-            self.load_metadata()
-        return list(self.metadata.index)
 
-    @property
-    def meta_file(self): return os.path.join(self.data_home,'datasets.csv')
-    def load_dataset(self, name):
-        meta = self.load_metadata()
-        url = meta.loc[name].download
-        with self.fetch_zip_cached(url, name) as zip_ref:
-            log.info(f'Parsing dataset {name}')
-            dataset = read_data(name,path=zip_ref)
-        
-        #dataset.data = SliceableList(dataset.data)
-        dataset.name = name
-        return dataset
-    
-    def fetch_zip_cached(self, url, name):
-        file_name = os.path.join(self.data_home,f'{name}.zip')
-        try:
-            zip_fid = zipfile.ZipFile(file_name,'r')
-        except (OSError,zipfile.BadZipFile) as exc:
-            log.info(f'{exc} Downloading...')
-            save_url(url, file_name)
-            zip_fid = zipfile.ZipFile(file_name,'r')
-        return zip_fid
-
-    def load_metadata(self, cache=True, force_reload=False):
-        df = None
-        meta_file = self.meta_file
-        def download():
-            df = self._download_metadata(simplify=True)
-            if cache and meta_file is not None:
-                df.to_csv(meta_file, sep='\t')
-            return df
-        if force_reload:
-            df = download()
-        else:
-            if self.metadata is not None:
-                df = self.metadata
-            else:
-                log.info(f'Trying to load cache: {meta_file}')
-                try:
-                    df = pandas.read_csv(meta_file, sep='\t').set_index('name')
-                except Exception as e:
-                    log.info(f'Could not load cache: {meta_file} because of: {e}')
-                    df = download()
-
-        self.__class__.metadata = df
-        return self.metadata
-        
+    def get_dataset_url(self, name):
+        return self.metadata.loc[name].download        
     @classmethod
     def _download_metadata(cls, simplify=True):
         from lxml import etree
@@ -130,6 +77,10 @@ class MorrisLoader():
             df = df_prn
         return df
         
+    def parse_dataset_data(self, name, path):
+        dataset = read_data(name, path)
+        dataset.name = name
+        return dataset
         
 
     @classmethod

@@ -380,7 +380,7 @@ class FactoryBase(metaclass=FactoryMeta):
 class NoConversionException(RuntimeError):
     pass
 
-def resolve_arguments(method, args, kwargs, resolver=DEFAULT_TYPE_RESOLVER, handler=None, kwarg_resolver=None, head_args=(None,)):
+def resolve_arguments(method, args, kwargs, resolver=DEFAULT_TYPE_RESOLVER, handler=None, kwargs_resolver=None, head_args=(None,)):
     """ Parse arguments to a function using annotations and inspection heuristics.
     
         :param allow_unbound_kwargs: Raise an error if a provided kwarg cannot be bounded. Defaults to False.
@@ -391,17 +391,17 @@ def resolve_arguments(method, args, kwargs, resolver=DEFAULT_TYPE_RESOLVER, hand
     """
     sig = inspect.signature(method)
     try:
-        if kwarg_resolver is None:
+        if kwargs_resolver is None:
             bound_args = sig.bind(*head_args, *args, **kwargs)
         else:
             bound_args_partial = sig.bind_partial(*head_args, *args, **kwargs)
-            kwargs_resolved = {}
+            kwargs_unresolved = {}
             for key, par in sig.parameters.items():
                 if key in bound_args_partial.arguments: continue
                 if par.kind in {inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL}: continue
                 if par.default is not inspect.Parameter.empty: continue
-                info = SimpleNamespace(parameter=par, signature=sig, bound=bound_args_partial)
-                kwargs_resolved[key] = kwarg_resolver(key, info) 
+                kwargs_unresolved[key] = par
+            kwargs_resolved = kwargs_resolver(kwargs_unresolved, signature=sig, bound_args=bound_args_partial) 
             bound_args = sig.bind(*head_args, *args, **kwargs, **kwargs_resolved)
         parameters = bound_args.signature.parameters
         arguments = bound_args.arguments

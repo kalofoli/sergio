@@ -7,6 +7,7 @@ from colito.files import EnumFileManager as _EnumFileManager
 class FileKinds(enum.Enum):
     DATA = enum.auto()
     DATA_MORRIS = enum.auto()
+    DATA_KEEL = enum.auto()
     LOG = enum.auto()
     DEFAULT = enum.auto()
     

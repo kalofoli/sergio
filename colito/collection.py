@@ -163,13 +163,33 @@ class ClassCollectionRegistrar(metaclass=ClassCollectionRegistrarMeta):
     __collection_factory__ = None
 
 
+class CollectionMemberWithKeywordResolver:
+    @classmethod
+    def __kwargs_preprocess__(cls, kwarg_resolver, **kwargs):
+        return kwargs
+    @classmethod
+    def __resolve_kwargs__(cls, kwargs_unresolved, signature, bound_args, kwarg_resolver):
+        '''Return a function that resolves arguments for the given class.
+        
+        The resolver must take arguments (kwarg:str, info:SimpleNamespace) and return a value.
+        ''' 
+        kwargs_resolved = {}
+        for kwarg, par in kwargs_unresolved.items():
+            kwargs_resolved[kwarg] = kwarg_resolver(kwarg, SimpleNamespace(parameter=par, bound=bound_args, signature=signature, cls=cls))
+        return kwargs_resolved
+    
 class ClassCollectionFactoryRegistrar(ClassCollectionRegistrar):
     __collection_tag__ = None
     __collection_factory__ = None
     @classmethod
     def __parse_string_argument__(cls, name, value, parameter):
+        '''Handles conversion of an unprocessed value from a signature parameter
+        ..note:: If raises a NoConversionException, the default conversion is performed, based on the annotation of the argument.
+        ''' 
         from colito.factory import NoConversionException
         raise NoConversionException()
+
+        
     @classmethod
     def make_from_strings(cls, name, *args, **kwargs):
         tag_cls, args_p, kwargs_p = cls.parse_string_arguments(name, args, kwargs)
@@ -185,11 +205,12 @@ class ClassCollectionFactoryRegistrar(ClassCollectionRegistrar):
     def parse_string_arguments(cls, name, args, kwargs, kwarg_resolver=None):
         from colito.factory import resolve_arguments
         tag_cls = cls.__collection_factory__.tags[name]
-        if kwarg_resolver is not None:
-            _resolver = lambda kwarg, info: kwarg_resolver(kwarg, SimpleNamespace(cls=cls,**info.__dict__))
+        if issubclass(tag_cls, CollectionMemberWithKeywordResolver):
+            kwargs = tag_cls.__kwargs_preprocess__(kwarg_resolver, **kwargs)
+            _resolver = lambda *args, **kwargs: tag_cls.__resolve_kwargs__(*args, kwarg_resolver = kwarg_resolver, **kwargs)
         else:
             _resolver = None
-        args_p, kwargs_p = resolve_arguments(tag_cls.__init__, args, kwargs, handler=tag_cls.__parse_string_argument__, kwarg_resolver=_resolver)
+        args_p, kwargs_p = resolve_arguments(tag_cls.__init__, args, kwargs, handler=tag_cls.__parse_string_argument__, kwargs_resolver=_resolver)
         return tag_cls, args_p, kwargs_p
         
     
