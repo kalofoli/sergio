@@ -3,6 +3,7 @@ import operator
 import typing
 
 from .summaries import SummarisableAsDict, SummaryOptions
+from colito.summaries import summary_from_fields
 
 
 _template_counter = '''
@@ -177,7 +178,7 @@ class StatisticsBase(SummarisableAsDict, metaclass=_StatisticsMeta):
         return {name:counter.getter(self) for name,counter in self.__statistics_counters__.items()}
     
     def __summary_dict__(self, options:SummaryOptions): # pylint: disable=unused-argument
-        return self.summary_from_fields(self.__statistics_counters__)
+        return summary_from_fields(self, self.__statistics_counters__)
 
     def __iadd__(self, other):
         if not isinstance(other, self.__class__):

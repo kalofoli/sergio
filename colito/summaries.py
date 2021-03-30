@@ -85,7 +85,9 @@ class SummarisableAsDict(Summarisable):
     __summary_conversions__ = {}
     def __summary__(self, options: SummaryOptions = DEFAULT_SUMMARY_OPTIONS):
         smr = self.__summary_dict__(options)
-        for key,fn in self.__summary_conversions__.items():
+        sc = _get_summary_conversions(self)
+        convs = sc(self.__class__)
+        for key,fn in convs.items():
             if key in smr:
                 smr[key] = fn(smr[key])
             elif isinstance(key, type):
@@ -124,6 +126,29 @@ class SummaryFieldsAppend(SummaryFields):
         base = cls.__bases__[0]
         base_fields = _get_summary_fields(base)
         return base_fields(base) + fields
+
+class SummaryConversions(dict):
+    '''Used as a base class for the __summary_conversions__ member.'''
+    def __call__(self, cls):
+        return dict(self)
+
+def _get_summary_conversions(what):
+    try:
+        sc = what.__summary_conversions__
+        if isinstance(sc, SummaryConversions):
+            return sc
+        else:
+            return SummaryConversions(sc)
+    except AttributeError:
+        return SummaryConversions()
+
+class SummaryConversionsAppend(SummaryConversions):
+    '''When used as a __summary_conversions__ member it prepends the base class fields.'''
+    def __call__(self, cls):
+        convs = super().__call__(cls)
+        base = cls.__bases__[0]
+        base_convs = _get_summary_conversions(base)
+        return {**base_convs(base), **convs}
     
 class SummarisableFromFields(SummarisableAsDict):
     """ Create a summarisable object with fields those in the __summary_fields__ entry.
@@ -203,20 +228,6 @@ class SummaryVisitor:
     def on_assemble(self, state:SummaryState, actions):pass
 
 
-class ClassSummaryVisitor(SummaryVisitor):
-    __summary_class__ = None
-    
-    def isapplicable(self, state:SummaryState):
-        summary_class = self.__summary_class__ 
-        if isinstance(summary_class, type):
-            isapplicable = isinstance(state.value, summary_class)
-        elif isinstance(summary_class, str):
-            state_name = state.name
-            isapplicable = state.cls.__name__ == summary_class or state_name == summary_class
-        else:
-            raise TypeError(f'This class has a wrong type of __summary_class__ member: {summary_class}.')
-        return isapplicable
-    
 class StopFiltering(Exception): pass
 
 class OnError(enum.Enum):

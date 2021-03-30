@@ -15,7 +15,7 @@ log = getModuleLogger(__name__)
 
 class RuntimeEnvironment(SummarisableFromFields):
     __summary_fields__ = ('date', 'hostname', 'username', 'pid', 'cwd', 'cpu_count', 'git_version')
-    
+    __summary_conversions__ = {'date':str}
     def __init__(self):
         self.date = datetime.now()
 

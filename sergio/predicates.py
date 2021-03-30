@@ -13,7 +13,8 @@ import operator
 from pandas.core.series import Series, isna, notna
 import numpy as np
 
-from colito.summaries import SummaryOptions, Summarisable
+from colito.summaries import SummaryOptions, SummarisableAsDict,\
+    summary_from_fields
 from sergio.attributes import AttributeKind, AttributeInfo as Attribute, AttributeCategorical, AttributeNumerical, \
     AttributeBoolean
 from sergio.discretisers import Discretiser, Interval, DEFAULT_DISCRETISER
@@ -77,7 +78,7 @@ class Predicate:
             return self.__class__.__name__ < other.__class__.__name__
 
 
-class AttributePredicate(Summarisable, Predicate):
+class AttributePredicate(SummarisableAsDict, Predicate):
     '''Predicate based on a single attribute'''
     
     name_rex = re.compile('[a-zA-Z_][a-zA-Z0-9_]*')
@@ -137,7 +138,7 @@ class AttributePredicate(Summarisable, Predicate):
         '''Create a string representation of this predicate'''
         raise NotImplementedError()
     
-    def summary_dict(self, options:SummaryOptions):
+    def __summary_dict__(self, options:SummaryOptions):
         return OrderedDict([('description', str(self)),
                             ('name', self.name),
                             ('negated', self.negated),
@@ -187,8 +188,8 @@ class PredicateCategorical(AttributePredicate):
         else:
             return super(PredicateCategorical, self).__lt__(other)
 
-    def summary_dict(self, options:SummaryOptions):
-        dct = super().summary_dict(options)
+    def __summary_dict__(self, options:SummaryOptions):
+        dct = super().__summary_dict__(options)
         dct['category'] = self.category
         return dct
     
@@ -243,8 +244,8 @@ class PredicateRanged(AttributePredicate):
         else:
             return super(PredicateRanged, self).__lt__(other)
 
-    def summary_dict(self, options:SummaryOptions):
-        dct = super().summary_dict(options)
+    def __summary_dict__(self, options:SummaryOptions):
+        dct = super().__summary_dict__(options)
         dct['bounds'] = self.bounds
         return dct
     
@@ -286,7 +287,7 @@ class PredicateBoolean(AttributePredicate):
     summary_name = 'predicate-boolean'
 
 
-class Prediciser(Summarisable):
+class Prediciser(SummarisableAsDict):
     
     def __init__(self, discretiser: Discretiser=None, negate:PredicateKinds=PredicateKinds.ALL) -> None:
         self._discretiser: Discretiser = DEFAULT_DISCRETISER if discretiser is None else discretiser
@@ -353,8 +354,8 @@ class Prediciser(Summarisable):
         preds = reduce(operator.add,map(mk_preds, categories),[])
         return preds
     
-    def summary_dict(self, options:SummaryOptions):
-        dct = self.summary_from_fields(('discretiser',))
+    def __summary_dict__(self, options:SummaryOptions):
+        dct = summary_from_fields(('discretiser',))
         dct['negate'] = PREDICATE_KINDS_RESOLVER.flag2str(self.negate)
         return dct
 

@@ -101,7 +101,7 @@ class Pauser(Summarisable):
                 f'W={self.duration_waited:5g}({self.duration_waited/duration_alive*100:.3g}%) '
                 f'count: P={self.times_paused} W={self.times_waited}>')
     
-    def summarise_dict(self, options:SummaryOptions):
+    def __summary_dict__(self, options:SummaryOptions):
         fields = ['times_paused','times_waited','duration_paused','duration_waited','duration_alive','time_created','is_paused','is_waited']
-        return self.summary_from_fields(fields)
+        return summary_from_fields(self,fields)
 

@@ -12,7 +12,7 @@ import enum
 
 import colito.matlab as mtl
 
-from colito.summaries import Summarisable, SummaryOptions
+from colito.summaries import SummaryOptions, SummarisableAsDict
 from colito.resolvers import make_enum_resolver
 
 class Minimisers:
@@ -101,7 +101,7 @@ class DiscretiserRanges(enum.Flag):
 
 DISCRETISER_RANGE_RESOLVER = make_enum_resolver(DiscretiserRanges, allow_multiple=True, collapse_multipart=True)
 
-class Discretiser(Summarisable):
+class Discretiser(SummarisableAsDict):
     
     
     default_names = {
@@ -162,7 +162,7 @@ class Discretiser(Summarisable):
                            in enumerate(zip(cuts, [None]*len(cuts))))
         return levels
     
-    def summary_dict(self, options:SummaryOptions):
+    def __summary_dict__(self, options:SummaryOptions):
         dct = self.summary_from_fields(('cut_count',))
         dct['ranges'] = DISCRETISER_RANGE_RESOLVER.flag2str(self.ranges)
         return dct
@@ -272,8 +272,8 @@ class FrequencyDiscretiser(Discretiser):
         levels = self.cuts2levels(values)
         return levels
 
-    def summary_dict(self, options:SummaryOptions):
-        dct = super().summary_dict(options)
+    def __summary_dict__(self, options:SummaryOptions):
+        dct = super().__summary_dict__(options)
         dct['midpoints'] = self.midpoints
         return dct
 

@@ -13,8 +13,7 @@ from pandas import DataFrame
 import numpy as np
 
 from colito.logging import getModuleLogger, to_stuple
-from colito.summaries import Summarisable, SummaryOptions, SummarisableList,\
-    SummarisableFromFields
+from colito.summaries import SummaryOptions, SummarisableList, SummarisableFromFields
 from colito.runtime import RuntimeEnvironment
 from colito.factory import DEFAULT_TYPE_RESOLVER
 
@@ -32,6 +31,7 @@ from sergio.kernels.gramian import GramianFromDataset
 from sergio.data.bundles.entities import EntityAttributes
 from colito import NamedUniqueConstant
 from collections import namedtuple
+from sergio.summaries import SelectorSummariser
 
 log = getModuleLogger(__name__) #pylint: disable=invalid-name
 
@@ -53,10 +53,10 @@ DataFrame.rename_columns = rename_columns
 
 class Computation(SummarisableFromFields):
     SCORE_CONFIGS = ['AverageCoreness']
-    __summary_fileds__ = ('tag', 'runtime', 'dataset', 'language', 'measure',
+    __summary_fields__ = ('tag', 'runtime_environment', 'dataset', 'language', 'measure',
                           'optimistic_estimator', 'search', 'subgroups')
     
-    __summary_convert__ = {'subgroups': SummarisableList}
+    __summary_conversions__ = {'subgroups': SummarisableList}
 
     def __init__(self, tag=None, log=log, file_manager = None, cache = DEFAULT_FILE_CACHE):
         self._file_manager: FileManager = file_manager if file_manager is not None else FileManager()
@@ -392,18 +392,32 @@ class Computation(SummarisableFromFields):
             summary['result_history'] = self.result_history
         return summary
     
-#     def summarise_to_json(self, indent=4, separators=(',', ': '), parts=SummaryParts.BASIC):
-#         from colito.summaries import Summariser
-#         if log.ison.progress:
-#             results_text = 'results' if self.result_history is None else f'actual and {len(self.result_history)} historical results'
-#             log.progress(f'Computing experiment summary with {len(self.subgroups)} {results_text}.')
-#         summariser = Summariser()
-#         #summariser.add_filter(SelectorSummariser())
-#         #summariser.add_filter(ScoringfunctionSummariser())
-#         summary_parts = SummaryParts.get_parts(parts)
-#         summary = summariser.summarise_asdict(self, parts = summary_parts)
-#         jsonstr = Summariser.to_json(summary, indent=indent, separators=separators)
-#         return jsonstr
+    def summarise_to_json(self, indent=4, separators=(',', ': '), scores=[]):
+        r'''
+        :param scores: extra scores to evaluate the selectors at.
+        
+        >>> import sergio.scores.scalars
+        >>> c = Computation(cache=None, tag='doctest', file_manager=FileManager('datasets'))\
+        ...     .load_dataset('toy-scalar:circledots,ATTR,outer').load_prediciser().load_language()\
+        ...     .load_measure('coverage-mean-shift').load_optimistic_estimator('coverage-mean-shift')
+        >>> c
+        <Computation[doctest] D:<EntityAttributesWithAttributeTarget[circledots](147x2/3) target: outer(bool@2)>, L:<ClosureConjunctionLanguageRestricted: of 10 predicates>, SG:-, M:<MeasureCoverageMeanShift(coverage_exponent=1.0)>, O:<OptimisticEstimatorCoverageMeanShift(coverage_exponent=1.0)>>
+        >>> res = c.optimise_inplace(depths=1)
+        >>> ','.join(map(str,res.subgroups))
+        '{[label=circle]^[label!=dot]^[label!=small]^[label!=spread]}'
+        >>> c.summarise_to_json()[0]
+        '{'
+        '''
+        from colito.summaries import NamedSummariser
+        if log.ison.progress:
+            results_text = 'results' if self.result_history is None else f'actual and {len(self.result_history)} historical results'
+            log.progress(f'Computing experiment summary with {len(self.subgroups)} {results_text}.')
+        summariser = NamedSummariser()
+        summariser.add_visitor(SelectorSummariser(scores))
+        summary = summariser(self)
+        import json
+        jsonstr = json.dumps(summary, indent=indent, separators=separators)
+        return jsonstr
 #     
 #     def subgroups_to_json(self, indent=4, separators=(',', ': '), parts=SummaryParts.BASIC):
 #         import json

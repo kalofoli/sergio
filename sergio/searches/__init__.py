@@ -18,7 +18,7 @@ from colito.logging import getModuleLogger, ColitoLogger
 from colito.statistics import StatisticsBase, StatisticsCounter, updater as stats_updater,\
     StatisticsUpdater
 from colito.summaries import SummaryOptions, SummarisableList, Summarisable,\
-    SummarisableDict
+    SummarisableDict, SummarisableAsDict, summary_from_fields
 
 from ..scores import OptimisticEstimator, Measure
 from ..language import Language, Selector, ConjunctionSelector, ConjunctionLanguage
@@ -502,14 +502,14 @@ class DFSVisitor:
 
 class DFSResultLogger(DFSVisitor):
     Update = namedtuple('Update',('new','old','statistics','time'))
-    class UpdateList(list, Summarisable):
-        def summary_dict(self, options:SummaryOptions):
+    class UpdateList(list, SummarisableAsDict):
+        def __summary_dict__(self, options:SummaryOptions):
             selector2index = {}
             update_dicts = SummarisableList()
             for update in self:
                 if update.new.selector not in selector2index:
                     selector2index[update.new.selector] = len(selector2index)
-                state_new = update.new.summary_dict(selector_dict=selector2index)
+                state_new = update.new.__summary_dict__(selector_dict=selector2index)
                 index_old = -1 if update.old is None else selector2index[update.old.selector]
                 update_dict = SummarisableDict(state_new)
                 update_dict['index_old'] = index_old
@@ -529,7 +529,7 @@ class DFSResultLogger(DFSVisitor):
         self._result_history.append(update)
     result_history = property(lambda self:self._result_history, None, 'Results tracked so far.')
 
-class DepthFirstSearch(LanguageTopKBranchAndBound, Summarisable):
+class DepthFirstSearch(LanguageTopKBranchAndBound, SummarisableAsDict):
     
     def __init__(self, language: ConjunctionLanguage,
                  measure: Measure, optimistic_estimator: OptimisticEstimator,
@@ -744,9 +744,9 @@ class DepthFirstSearch(LanguageTopKBranchAndBound, Summarisable):
                         self._objective_attainable = max(self._objective_attainable, max_attainable)
         return self._reached_max_depth
 
-    def summary_dict(self, options: SummaryOptions):
+    def __summary_dict__(self, options: SummaryOptions):
         fields = ('statistics', 'time_elapsed', 'time_started', 'status', 'reached_max_depth', 'max_depth', 'state_scoring', 'refinement_scoring', 'objective_attainable','k')
-        dct = self.summary_from_fields(fields)
+        dct = summary_from_fields(self,fields)
         dct['subgroups'] = SummarisableList(self.subgroups())
         dct['status'] = str(dct['status'])
         return dct
@@ -757,7 +757,7 @@ class DepthFirstSearch(LanguageTopKBranchAndBound, Summarisable):
 DepthSpec = Union[float, int, Iterable[int]]
 
 
-class IterativeDeepening(LanguageTopKBranchAndBound, Summarisable):
+class IterativeDeepening(LanguageTopKBranchAndBound, SummarisableAsDict):
     
     def __init__(self, language: ConjunctionLanguage,
                  measure: Measure, optimistic_estimator: OptimisticEstimator, k:int=1, max_best:bool=True,
@@ -839,9 +839,9 @@ class IterativeDeepening(LanguageTopKBranchAndBound, Summarisable):
             depth += 1
         return self._results.entries()
         
-    def summary_dict(self, options: SummaryOptions):
+    def __summary_dict__(self, options: SummaryOptions):
         fields = ('statistics', 'state_scoring', 'refinement_scoring', 'approximation_factor', 'time_elapsed', 'time_started', 'status')
-        dct = self.summary_from_fields(fields)
+        dct = summary_from_fields(self, fields)
         dct['steps'] = SummarisableList(self._dfs_runs)
         dct['subgroups'] = SummarisableList(self.subgroups())
         dct['status'] = str(dct['status'])

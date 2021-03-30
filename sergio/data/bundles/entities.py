@@ -9,7 +9,8 @@ import numpy as np
 import itertools
 from typing import List, Sequence
 
-from colito.summaries import SummarisableFromFields, SummaryFieldsAppend
+from colito.summaries import SummarisableFromFields, SummaryFieldsAppend,\
+    SummaryConversionsAppend
 from sergio.attributes import AttributeInfoFactory
 from colito.decorators import with_field_printers
 
@@ -23,6 +24,7 @@ class EntityAttributes(SummarisableFromFields):
     ''' 
     # pylint: disable=too-many-instance-attributes
     __summary_fields__ = ('name', 'attribute_selection', 'attribute_info')
+    __summary_conversions__ = {'attribute_selection':str, 'attribute_info':str}
 
     def __init__(self, attribute_data: pd.DataFrame, name: str,
                  attribute_info={None:None}, attribute_selection={None:True}) -> None:
@@ -217,6 +219,7 @@ class EntityAttributesWithAttributeTarget(EntityAttributesWithTarget):
     <EntityAttributesWithAttributeTarget[test](4x1/3) target: a(int64@0)>
     """
     __summary_fields__ = SummaryFieldsAppend(('target_index','target_dtype'))
+    __summary_conversions__ = SummaryConversionsAppend({'target_dtype':str, 'target_index':int})
 
     def __init__(self, attribute_data: pd.DataFrame, target, name,
                  attribute_info={None:None}, attribute_selection={None:1}) -> None:
@@ -257,6 +260,8 @@ class EntityAttributesWithArrayTarget(EntityAttributesWithTarget):
     <EntityAttributesWithArrayTarget[test](4x1/3) target: target(2d int64)>
     """
     __summary_fields__ = SummaryFieldsAppend(('target_ndim','target_dtype'))
+    __summary_conversions__ = SummaryConversionsAppend({'target_dtype':str})
+    
     def __init__(self, attribute_data: pd.DataFrame, name: str, target:np.ndarray, target_name:str = 'target',
                  attribute_info={None:None}, attribute_selection={None:1}) -> None:
         super().__init__(attribute_data=attribute_data, name=name, attribute_info=attribute_info, 
@@ -289,153 +294,6 @@ class EntityAttributesWithArrayTarget(EntityAttributesWithTarget):
     def target_description(self) -> str:
         return f'{self.target_name}({self.target_ncols}d {self.target_dtype})'
 
-
-if False:    
-    '''
-    Class helpers
-    '''
-
-
-    '''
-    Properties
-    '''
-
-
-    @name.setter
-    def name(self, value):
-        self._name = value
-
-    @property
-    def attributes(self):
-        '''Entities data'''
-        return self._attributes
-
-    @property
-    def ncols(self):
-        '''Number of columns/attributes'''
-        return len(self.attributes.columns)
-
-    @property
-    def nrows(self):
-        '''Number of rows/entities'''
-        return len(self._attributes)
-
-    prediciser = property(lambda self:self._prediciser, None, 'The prediciser used to create the predicates from the attributes of this dataset.')
-    
-    @prediciser.setter
-    def prediciser(self, value):
-        self._prediciser = value
-    
-    @property
-    def attribute_kinds(self):
-        '''Kinds for each attribute. Assignable to a dict for selective update.'''
-        return self._attribute_kinds.copy()
-
-    @attribute_kinds.setter
-    def attribute_kinds(self, kinds: KindCollection):
-        attr_kinds_new: List[AttributeKind] = self._attribute_kinds.copy()
-        indices: List[int]
-        kind_hints: List[KindType]
-        if isinstance(kinds, dict):
-            indices = self.get_indices(kinds.keys(), collapse=False)
-            kind_hints = list(kinds.values())
-        else:
-            indices = self.get_indices(None)
-            kind_hints = cast(List[KindType], kinds)
-        for index, kind_hint in zip(indices, kind_hints):
-            series = self.get_series(index)
-            attr_kind = self._infer_attribute_kind(series, kind_hint)
-            attr_kinds_new[index] = attr_kind
-        self._attribute_kinds = attr_kinds_new
-
-    @property
-    def attribute_selection(self):
-        '''Select which attributes should be included for predicate creation.'''
-        return self._attribute_selection.copy()
-
-    @attribute_selection.setter
-    def attribute_selection(self, selection: Dict[IndexType, bool]):
-        attr_sel_new: List[bool] = self._attribute_selection.copy()
-        indices: List[int]
-        indices_selected: List[bool]
-        if isinstance(selection, dict):
-            indices = self.get_indices(selection.keys(), collapse=False)
-            indices_selected = list(selection.values())
-        else:
-            indices = self.get_indices(None)
-            indices_selected = cast(List[bool], selection)
-        for index, sel in zip(indices, indices_selected):
-            attr_sel_new[index] = sel
-        self._attribute_selection = attr_sel_new
-
-    '''
-    methods
-    '''
-    
-    def get_attributes(self, which=None, collapse=False, selection: bool=False) -> List[Attribute]:
-        '''Create Attribute instances describing the given indices'''
-
-        def mk_attribute(index: int) -> Attribute:
-            '''Make an attribute from a series index'''
-            kind = self.attribute_kinds[index]
-            attribute = AttributeFactory.make(self, index, kind)
-            return attribute
-
-        attrs = self.get_indices(which, collapse=collapse, selection=selection, fun=mk_attribute)
-        return attrs
-
-    def get_predicates(self, which: IndexType=None, selection=True) -> Iterator['Predicate']:
-        '''Get an iterator of all predicates. Index specifies indices.'''
-        attrs = self.get_attributes(which, selection=selection)
-        predicates = chain(*map(self.prediciser.predicates_from_attribute, attrs))
-        return predicates
-
-    def select_entities(self, entity_loc, name: Optional[str]=None) -> 'GraphData':
-        '''Select a subset of entities (rows) into a new GraphData instance'''
-        sub_entities = self._entities.loc[entity_loc]
-        edges_locb = self._edges.isin(sub_entities.index).all(axis=1)
-        sub_edges = self._edges.loc[edges_locb]
-        GraphData.Tools.remap_edges(id_map=sub_entities.index, edges=sub_edges, inplace=True)
-        if name is None:
-            name = self.name + "_selection"
-        gdata = GraphData(sub_entities, sub_edges, name=name)
-        gdata.attribute_kinds = self.attribute_kinds
-        gdata.attribute_selection = self.attribute_selection
-        return gdata
-    
-    def drop_identity_columns(self,selection=None, columns=None, ignore_na=False):
-        import numpy as np
-        def isequal(s):
-            idl = s.isna()
-            idl_rate = idl.mean()
-            if idl_rate == 1:
-                return True
-            elif idl_rate != 0:
-                if ignore_na:
-                    s = s[~idl]
-                else:
-                    return False
-            return np.all(s == next(iter(s)))
-        
-        if columns is not None and selection is not None:
-            raise ValueError('At most one column specifier must be provided.')
-        if selection is not None:
-            columns = self.entities.columns[selection]
-        if columns is None:
-            columns = self.entities.columns
-        idl_equal = self.entities.loc[:,columns].apply(isequal, axis=0, reduce=True)
-        bad_cols = columns[idl_equal]
-        entities = self.entities.drop(bad_cols,axis=1)
-        attribute_kinds = [kind for index,kind in enumerate(self.attribute_kinds) if not idl_equal[index]]
-        attribute_selection = [sel for index,sel in enumerate(self.attribute_selection) if not idl_equal[index]]
-        data = GraphData(entities=entities, edges=self._edges, name=self.name,
-                         attribute_kinds=attribute_kinds, attribute_selection=attribute_selection)
-        return data
-    
-    def summary_dict(self, options):
-        fields = ('name','nrows','ncols')
-        dct = self.summary_from_fields(fields)
-        return dct
 
 
 if __name__ == '__main__':

@@ -79,7 +79,7 @@ class MeasureJaccard(JaccardScoreMixin, ScalarMeasure):
     
     def evaluate_uncached(self, selector: Selector) -> float:
         idl: np.ndarray = selector.validity
-        target: np.ndarray = self._target_data.values
+        target: np.ndarray = self._target_data
         
         return np.sum(idl & target)/np.sum(idl | target)
     
@@ -89,7 +89,7 @@ class OptimisticEstimatorJaccard(JaccardScoreMixin, ScalarOptimisticEstimator):
     
     def evaluate_uncached(self, selector: Selector) -> float:
         idl: np.ndarray = selector.validity
-        target: np.ndarray = self._target_data.values
+        target: np.ndarray = self._target_data
         
         return np.sum(idl & target)/self._target_size
     

@@ -15,7 +15,8 @@ import numpy as np
 
 from colito.cache import ValueCache as Cache
 from colito.indexing import Indexer, ClassCollection, SimpleIndexer
-from colito.summaries import Summarisable, SummaryOptions, SummarisableList
+from colito.summaries import SummaryOptions, SummarisableList,\
+    SummarisableAsDict
 from colito.logging import getModuleLogger
 from .utils import EffectiveValiditiesTracker, EffectiveValiditiesView, CandidateRestriction, Indices
 from ..predicates import Predicate
@@ -132,7 +133,7 @@ class Language(Generic[SelectorType]):
         raise NotImplementedError()
 
        
-class ConjunctionSelectorBase(Summarisable, LanguageSelector['ConjunctionLanguage']):
+class ConjunctionSelectorBase(SummarisableAsDict, LanguageSelector['ConjunctionLanguage']):
     '''Selector taking the conjunction of a set of predicates'''
 
     def __init__(self, language: 'ConjunctionLanguage', predicates: PredicateOrIndexCollectionType, cache: CacheSpecType=True) -> None:
@@ -197,10 +198,10 @@ class ConjunctionSelectorBase(Summarisable, LanguageSelector['ConjunctionLanguag
     def __eq__(self, other) -> bool:
         return (self.__class__.__name__, self.indices) == (other.__class__.__name__, other.indices)
 
-    def summary_dict(self, options:SummaryOptions):
+    def __summary_dict__(self, options:SummaryOptions):
         dct = {'description':str(self)}
-        if options.parts & SummaryParts.PREDICATE_INDICES:
-            dct['predicate_indices'] = self.indices
+        #if options.parts & SummaryParts.PREDICATE_INDICES:
+        #    dct['predicate_indices'] = self.indices
         return dct
         
 
@@ -239,7 +240,7 @@ class ConjunctionSelector(ConjunctionSelectorBase):
         return cls(language, predicates=digest.indices)
 
 
-class ConjunctionLanguage(Summarisable, Language):
+class ConjunctionLanguage(SummarisableAsDict, Language):
     '''Language of predicate conjunctions'''
     tag = 'conjunctions'
 
@@ -379,10 +380,10 @@ class ConjunctionLanguage(Summarisable, Language):
     def deserialise_selector(self, digest):
         return ConjunctionSelector.deserialise(self, digest)
 
-    def summary_dict(self, options:SummaryOptions):
+    def __summary_dict__(self, options:SummaryOptions):
         dct = {'data-name': self.data.name, 'num-predicates':len(self.predicates)}
-        if options.parts & SummaryParts.LANGUAGE_PREDICATES:
-            dct['predicates'] = SummarisableList(self.predicates)
+        #if options.parts & SummaryParts.LANGUAGE_PREDICATES:
+        #    dct['predicates'] = SummarisableList(self.predicates)
         return dct
     
 class ClosureConjunctionSelector(ConjunctionSelector, LanguageSelector['ClosureConjunctionLanguageBase']):
@@ -497,12 +498,12 @@ class ClosureConjunctionSelector(ConjunctionSelector, LanguageSelector['ClosureC
             digest = ClosureConjunctionSelector.Digest(**digest)
         return cls(language, predicates_path=digest.indices_path, _closure=digest.indices)
     
-    def summary_dict(self,options:SummaryOptions):
-        dct = super().summary_dict(options)
+    def __summary_dict__(self,options:SummaryOptions):
+        dct = super().__summary_dict__(options)
         dct['path_description'] = self.path_description
-        if options.parts & SummaryParts.PREDICATE_INDICES:
-            dct['path_indices'] = self.indices_path
-            dct['compact_indices'] = self.indices_compact
+        #if options.parts & SummaryParts.PREDICATE_INDICES:
+        #    dct['path_indices'] = self.indices_path
+        #    dct['compact_indices'] = self.indices_compact
         return dct
 
 class ClosureConjunctionLanguageBase(ConjunctionLanguage):

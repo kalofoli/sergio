@@ -45,7 +45,7 @@ class Measure(Summarisable, ClassCollectionFactoryRegistrar):
 
     @property
     def __summary_name__(self):
-        return f'meas-{self.__class__.tag}'
+        return f'meas-{self.__class__.__collection_tag__}'
     
     @classmethod
     def from_kwargs(cls, **kwargs):
@@ -62,7 +62,7 @@ class OptimisticEstimator(Summarisable, ClassCollectionFactoryRegistrar):
 
     @property
     def __summary_name__(self):
-        return f'oest-{self.__class__.tag}'
+        return f'oest-{self.__class__.__collection_tag__}'
     
 
 class CachingScoreMixin:

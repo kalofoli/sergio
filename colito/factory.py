@@ -45,7 +45,7 @@ try:
     
     
     ProductBundle.__bases__ = ProductBundle.__bases__ + (SummarisableFromFields,)
-    ProductBundle.__summary_fields__ = ('name','args','digest','product')
+    ProductBundle.__summary_fields__ = ('name','args','digest')
         
 except ImportError:
     class ProductBundle(SimpleNamespace, SummarisableFromFields):
