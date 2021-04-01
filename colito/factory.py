@@ -50,6 +50,8 @@ try:
 except ImportError:
     class ProductBundle(SimpleNamespace, SummarisableFromFields):
         __summary_fields__ = ('name','args','digest','product')
+        __slots__ = ('factory','method','functor','name','args','digest','product')
+        _fields = __slots__
         def __init__(self, factory_object: 'FactoryBase', method_object: 'FactoryMethod',
                      functor: Callable, name: str, args: Dict[str, Any], digest:str, product: Any):
             self.factory_object: 'FactoryBase' = factory_object
@@ -59,15 +61,15 @@ except ImportError:
             self.args: Dict[str, Any] = args
             self.digest:str = digest
             self.product: Any = product
-        
+    
         def produce(self, obj=None):
             product = self.functor(obj, **self.args) if obj is not None else self.functor(**self.args)
             self.product = product
             return product
-        
         @property
         def __summary_name__(self):
             return self.name
+
     
 
 
