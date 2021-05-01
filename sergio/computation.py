@@ -25,7 +25,7 @@ from sergio.discretisers import FrequencyDiscretiser
 from sergio.predicates import Prediciser
 from sergio import FileManager
 from sergio.data.factory import DatasetFactory
-from colito.cache import FileCache, DEFAULT_FILE_CACHE
+from colito.cache import DEFAULT_FILE_CACHE, PersistentCache
 from sergio.kernels import Kernel
 from sergio.kernels.gramian import GramianFromDataset
 from sergio.data.bundles.entities import EntityAttributes
@@ -60,7 +60,7 @@ class Computation(SummarisableFromFields):
 
     def __init__(self, tag=None, log=log, file_manager = None, cache = DEFAULT_FILE_CACHE):
         self._file_manager: FileManager = file_manager if file_manager is not None else FileManager()
-        self._cache: FileCache = cache
+        self._cache: PersistentCache = cache
         self._runtime_environment = RuntimeEnvironment()
         self._dataset = None
         self._prediciser = None

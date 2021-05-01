@@ -15,7 +15,7 @@ import os.path
 from colito.factory import factorymethod, factorygetter, FactoryGetter,\
     FactoryBase, FactoryDescription
 
-from colito.cache import DEFAULT_FILE_CACHE, FileCache
+from colito.cache import DEFAULT_FILE_CACHE
 from typing import Union, cast
 
 from types import SimpleNamespace
@@ -62,7 +62,7 @@ class DataBundle:
 class DatasetFactory(FactoryBase):
     '''Loader for various datasets'''
 
-    def __init__(self, cache: FileCache=None, file_manager:FileManager=None) -> None:
+    def __init__(self, cache=None, file_manager:FileManager=None) -> None:
         self._cache = cache
         self._fm = file_manager if file_manager is not None else FileManager()
         
