@@ -17,7 +17,7 @@ from colito.summaries import SummaryOptions, SummarisableList, SummarisableFromF
 from colito.runtime import RuntimeEnvironment
 from colito.factory import DEFAULT_TYPE_RESOLVER
 
-from sergio.language import LANGUAGES, Language
+from sergio.language import Language
 from sergio.scores import Measure, OptimisticEstimator
 from sergio.searches import IterativeDeepening, DFSResultLogger, DepthFirstSearch
 
@@ -209,7 +209,7 @@ class Computation(SummarisableFromFields):
         return self
         
     def parse_language(self, name='closure-conjunctions-restricted'):
-        language_cls = LANGUAGES.get_class_from_tag(name)
+        language_cls = Language.__collection_factory__.tags[name]
         if self.dataset is None:
             raise ValueError('No dataset is set; languages need a dataset in order to be loaded.')
         dataset = self._require('dataset', 'a language')
