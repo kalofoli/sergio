@@ -280,7 +280,8 @@ class Supersets(NamedTuple):
     def __repr__(self):
         return ' '.join(f'{i}{"Pe"[e]}' for i, e in 
                         zip(self.indices, self.is_equal))
-
+        
+    def __bool__(self): return len(self.indices)!=0
 
 class SupersetCollection(NamedTuple):
     extension: Supersets
@@ -293,6 +294,8 @@ class SupersetCollection(NamedTuple):
        
 class CandidateRestriction:
     '''Restricting the remaining superset candidates
+    
+    Serves as a state furing the refinement creation of closure languages. 
     
     :param extension ndarray: the indices of the remaining extensions to consider
     :param closure: the indices of the potential closures each of the extensions might have

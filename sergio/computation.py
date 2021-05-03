@@ -19,7 +19,8 @@ from colito.factory import DEFAULT_TYPE_RESOLVER
 
 from sergio.language import Language
 from sergio.scores import Measure, OptimisticEstimator
-from sergio.searches import IterativeDeepening, DFSResultLogger, DepthFirstSearch
+from sergio.searches import SearchResultLogger
+from sergio.searches.subgroup.dfs import IterativeDeepening, DepthFirstSearch
 
 from sergio.discretisers import FrequencyDiscretiser
 from sergio.predicates import Prediciser
@@ -354,7 +355,7 @@ class Computation(SummarisableFromFields):
         '''
         if track_results:
             log.info('Attaching results tracker visitor.')
-            dfs_visitor = DFSResultLogger(self._result_history)
+            dfs_visitor = SearchResultLogger(self._result_history)
             result_history = dfs_visitor.result_history
             def dfs(*args, **kwargs):
                 kwargs['visitor'] = dfs_visitor
