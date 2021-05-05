@@ -10,13 +10,15 @@ import math
 import itertools
 import operator
 import functools
+import numpy as np
 
 from sergio.language import Selector, ConjunctionLanguage, ConjunctionSelector
 from sergio.scores import Measure, OptimisticEstimator
 from .base import SubgroupSearch, SearchVisitor, SearchState, AddResultOutcome
 from .utils import ScoringFunctions
 
-from colito.summaries import summary_from_fields, SummaryOptions, SummarisableList, SummarisableAsDict
+from colito.summaries import summary_from_fields, SummaryOptions, SummarisableList, SummarisableAsDict,\
+    SummarisableFromFields, SummaryFieldsAppend
 from colito.queues import Entry
 from colito.factory import ProductBundle
 from colito.statistics import StatisticsBase, StatisticsUpdater
@@ -26,22 +28,24 @@ from colito.logging import getModuleLogger
 
 log = getModuleLogger(__name__)
 
-class DepthFirstSearch(SubgroupSearch, SummarisableAsDict):
+class DepthFirstSearch(SubgroupSearch, SummarisableFromFields):
     __collection_tag__ = 'depth-first'
+
+    __summary_fields__ = SummaryFieldsAppend(('statistics', 'reached_max_depth', 'max_depth', 'state_scoring', 'objective_attainable', 'k'))
     
     def __init__(self, language: ConjunctionLanguage,
                  measure: Measure, optimistic_estimator: OptimisticEstimator,
                  k:int=1, max_best:bool=True,
                  approximation_factor:float=1., max_depth:float=math.inf,
-                 state_scoring=None,refinement_scoring='optimistic_estimate', visitor = SearchVisitor()) -> None:
+                 state_scoring='optimistic_estimate', visitor = SearchVisitor()) -> None:
         
         super().__init__(language=language, measure=measure, optimistic_estimator=optimistic_estimator, k=k, max_best=max_best, approximation_factor=approximation_factor)
         self._stats = DepthFirstSearch.Statistics()
         self._states = None
         self._state_scoring: ProductBundle = ScoringFunctions.get(state_scoring)
-        self._refinement_scoring: ProductBundle = ScoringFunctions.get(refinement_scoring)
         self._objective_attainable:float = None
         self._max_depth = max_depth
+        self._reached_max_depth = None
         self._visitor = visitor
            
     class Statistics(StatisticsBase):
@@ -78,11 +82,6 @@ class DepthFirstSearch(SubgroupSearch, SummarisableAsDict):
         return self._state_scoring
 
     @property
-    def refinement_scoring(self):
-        '''the function used to sort the refinements. Lower values designate heavier pruning.'''
-        return self._refinement_scoring
-    
-    @property
     def states(self):
         return self._states
     
@@ -93,8 +92,16 @@ class DepthFirstSearch(SubgroupSearch, SummarisableAsDict):
     
     @property
     def objective_attainable(self):
-        '''The maximum possible score attainable by the (unvisited) deeper states'''
-        return self._objective_attainable
+        '''The best possible attainable by the unvisited states'''
+        if self._states is None:
+            att = None
+        else:
+            oest_vals = [state.optimistic_estimate for state in self._states]
+            if self._results.max_best:
+                att = np.max(oest_vals, initial='-inf')
+            else:
+                att = np.min(oest_vals, initial='inf')
+        return att
     
     @property
     def max_depth(self):
@@ -113,7 +120,6 @@ class DepthFirstSearch(SubgroupSearch, SummarisableAsDict):
 
     def _run(self, root_selector: Selector=None) -> bool:
         # Initialisations
-        self._objective_attainable = -math.inf
         self._reached_max_depth = False
         self._stats.reset()
         
@@ -172,27 +178,10 @@ class DepthFirstSearch(SubgroupSearch, SummarisableAsDict):
             pruned:Set[int] = state.blacklist.copy()
             #covered:Set[int] = set()
             
-            new_states = (make_state(selector=refinement, depth=state.depth+1,pruned=pruned) for refinement in refinements)
-            new_states = tuple(new_states) # dbg-remove
-            
-            #new_states_srt_all = sorted(new_states, key=self.refinement_scoring.product)[::-1]
-            
-            # handled in the language
-            #new_states_srt: List[DFSState] = []
-            #for new_state in new_states_srt_all:
-            #    selector:ConjunctionSelector = new_state.selector
-            #    last_predicate: int = selector.index_last_extension
-            #    new_state = new_state._replace(covered=covered.copy())
-            #    covered.add(last_predicate)  # blacklist only for future siblings
-            #    if set(new_state.blacklist) & set(new_state.selector.indices):
-            #        stats.increase_covered()
-            #        update_evaluations(new_state)
-            #    else:
-            #        new_states_srt.append(new_state)
-            new_states_srt = sorted(new_states, key=self.refinement_scoring.product)[::-1]
+            new_states = tuple(make_state(selector=refinement, depth=state.depth+1,pruned=pruned) for refinement in refinements)
             
             valid_states: List[SearchState] = []
-            for new_state in new_states_srt:
+            for new_state in new_states:
                 selector:ConjunctionSelector = new_state.selector
                 oest:float = new_state.optimistic_estimate
                 last_predicate: int = selector.index_last_extension
@@ -210,12 +199,12 @@ class DepthFirstSearch(SubgroupSearch, SummarisableAsDict):
             if log_ison.progress:
                 state_cnt = Counter(s.depth for s in states)
                 state_txt = ' '.join(f'{i}:{v:4}' for i, v in state_cnt.items())
-                log.progress(log.rlim.progress and f'Queue size: {len(states):6d}[{state_txt}]: Kept {len(valid_states)}/{len(new_states_srt)} while refining {state.selector!s}[d={state.depth}]. Full state: {state!s}')
+                log.progress(log.rlim.progress and f'Queue size: {len(states):6d}[{state_txt}]: Kept {len(valid_states)}/{len(new_states)} while refining {state.selector!s}[d={state.depth}]. Full state: {state!s}')
             #if log.ison.debug:
                 #valid_selectors = set(s.selector for s in valid_states)
                 #state_txt = ','.join(map(lambda s:f'{"V" if s.selector in valid_selectors else "P"}{s}', new_states_srt))
                 #log.debug(f'Current states: {len(states):3d}. Kept {len(valid_states)}/{len(new_states)} while refining {state!s}. These are: {state_txt}')
-            visitor.state_expanded(self, state, valid_states, new_states_srt)
+            visitor.state_expanded(self, state, valid_states, new_states)
             return valid_states
         
         
@@ -240,30 +229,23 @@ class DepthFirstSearch(SubgroupSearch, SummarisableAsDict):
                     if new_states:
                         self._reached_max_depth = True
                         stats.increase_deep(len(new_states))
-                        max_attainable = max(state.optimistic_estimate for state in new_states)
-                        self._objective_attainable = max(self._objective_attainable, max_attainable)
         return self._reached_max_depth
 
-    def __summary_dict__(self, options: SummaryOptions):
-        fields = ('statistics', 'time_elapsed', 'time_started', 'status', 'reached_max_depth', 'max_depth', 'state_scoring', 'refinement_scoring', 'objective_attainable','k')
-        dct = summary_from_fields(self,fields)
-        dct['subgroups'] = SummarisableList(self.subgroups())
-        dct['status'] = str(dct['status'])
-        return dct
-    
     summary_name = 'depth-first-search'
 
 
 DepthSpec = Union[float, int, Iterable[int]]
 
 
-class IterativeDeepening(SubgroupSearch, SummarisableAsDict):
+class IterativeDeepening(SubgroupSearch, SummarisableFromFields):
     __collection_tag__ = 'iterative-deepening'
+    __summary_fields__ = SummaryFieldsAppend(('statistics','state_scoring','steps','depths'))
+    __summary_conversions__ = {'depths':str,'steps':SummarisableList}
     
     def __init__(self, language: ConjunctionLanguage,
                  measure: Measure, optimistic_estimator: OptimisticEstimator, k:int=1, max_best:bool=True,
                  approximation_factor:float=1.,depths:DepthSpec=math.inf,
-                 state_scoring=None, refinement_scoring='optimistic_estimate',
+                 state_scoring='optimistic_estimate',
                  dfs=DepthFirstSearch) -> None:
         
         super().__init__(language=language, measure=measure, optimistic_estimator=optimistic_estimator, k=k, max_best=max_best, approximation_factor=approximation_factor)
@@ -273,7 +255,6 @@ class IterativeDeepening(SubgroupSearch, SummarisableAsDict):
         
         self._dfs_runs:List[DepthFirstSearch] = []
         self._state_scoring: ProductBundle = ScoringFunctions.get(state_scoring)
-        self._refinement_scoring: ProductBundle = ScoringFunctions.get(refinement_scoring)
         
     @classmethod
     def _get_depths(cls, depths: DepthSpec) -> Iterable[int]:
@@ -309,6 +290,10 @@ class IterativeDeepening(SubgroupSearch, SummarisableAsDict):
         return None
 
     @property
+    def steps(self):
+        '''The DFS object from each run performed'''
+        return self._dfs_runs
+    @property
     def depths(self):
         return self._depths
      
@@ -317,17 +302,12 @@ class IterativeDeepening(SubgroupSearch, SummarisableAsDict):
         '''the function used to sort the states. Higher values designate earlier popping.'''
         return self._state_scoring
     
-    @property
-    def refinement_scoring(self):
-        '''the function used to sort the refinements. Lower values designate heavier pruning.'''
-        return self._refinement_scoring
-    
     def _run(self) -> Tuple[Entry, ...]:
         depth_iter = self._get_depths(self.depths)
         for depth in depth_iter:
             dfs = self._dfs(language=self.language, measure=self.measure, optimistic_estimator=self.optimistic_estimator,
                             k=self.k, approximation_factor=self.approximation_factor, max_depth=depth,
-                            state_scoring=self._state_scoring, refinement_scoring=self._refinement_scoring)
+                            state_scoring=self._state_scoring)
             self._dfs_runs.append(dfs)
             
             dfs.try_add_results(self.results.elements(sort=False), quiet=True)
@@ -340,7 +320,7 @@ class IterativeDeepening(SubgroupSearch, SummarisableAsDict):
             depth += 1
         return self._results.entries()
         
-    def __summary_dict__(self, options: SummaryOptions):
+    def ___summary_dict__(self, options: SummaryOptions):
         dct_base = super().__summary_dict__(options)
         fields = ('statistics', 'state_scoring')
         dct = summary_from_fields(self, fields)

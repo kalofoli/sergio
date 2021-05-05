@@ -34,12 +34,19 @@ PREDICATE_KINDS_RESOLVER = make_enum_resolver(PredicateKinds)
 
 class Predicate:
     '''A logical predicate mapping entities to a boolean'''
-     
-    def __init__(self, data: 'GraphData', negated=False) -> None:
+    
+    __slots__ = ('_negated','_data', '_index')
+    def __init__(self, data: 'GraphData', negated=False, index=None) -> None:
         self._negated: bool = False
-        self.negated = negated
+        self.negated = negated # set through setting mechanism
         self._data: 'GraphData' = data
+        self._index = index
 
+    @property
+    def index(self) -> int:
+        '''Index within a list of predicates.'''
+        return self._index
+    
     @property
     def negated(self):
         '''Whether the predicate value should be negated'''
@@ -77,14 +84,19 @@ class Predicate:
         if other.__class__ == self.__class__:
             return self.__class__.__name__ < other.__class__.__name__
 
+    def copy(self, **kwargs):
+        '''Make a new predicate object with optional updated arguments.'''
+        from inspect import signature
+        sig = signature(self.__init__)
+        attrs = {par:getattr(self,par) for par in sig.parameters}
+        return self.__class__(**{**attrs, **kwargs})
 
 class AttributePredicate(SummarisableAsDict, Predicate):
     '''Predicate based on a single attribute'''
-    
+    __slots__ = ('_attribute','_attribute_index')
     name_rex = re.compile('[a-zA-Z_][a-zA-Z0-9_]*')
-    
-    def __init__(self, attribute: Attribute, negated: bool=False) -> None:
-        super(AttributePredicate, self).__init__(data=attribute.data, negated=negated)
+    def __init__(self, attribute: Attribute, negated: bool=False, index=None) -> None:
+        super().__init__(data=attribute.data, negated=negated, index=index)
         self._attribute: Attribute = attribute
         self._attribute_index: int = attribute.index
 
@@ -98,10 +110,10 @@ class AttributePredicate(SummarisableAsDict, Predicate):
         return self.attribute.series
 
     @property
-    def index(self) -> int:
+    def attribute_index(self) -> int:
         '''Index of the involved attribute'''
         return self._attribute_index
-
+    
     @property
     def attribute(self) -> Attribute:
         '''The attribute for this Predicate'''
@@ -139,18 +151,17 @@ class AttributePredicate(SummarisableAsDict, Predicate):
         raise NotImplementedError()
     
     def __summary_dict__(self, options:SummaryOptions):
-        return OrderedDict([('description', str(self)),
-                            ('name', self.name),
-                            ('negated', self.negated),
-                            ('attribute_index', self.index)])
+        return {'description': str(self), 'name': self.name, 
+                'negated': self.negated, 'attribute_index': self.attribute_index}
 
 
 class PredicateCategorical(AttributePredicate):
     '''Test if an entity has a categorical attribute equal to a category'''
     kind = PredicateKinds.CATEGORICAL
+    __slots__ = ('_category',)
 
-    def __init__(self, attribute: Attribute, category: str, negated: bool=False) -> None:
-        super(PredicateCategorical, self).__init__(attribute=attribute, negated=negated)
+    def __init__(self, attribute: Attribute, category: str, negated: bool=False, index:int=None) -> None:
+        super(PredicateCategorical, self).__init__(attribute=attribute, negated=negated, index=index)
         self._category = category
 
     @property
@@ -171,8 +182,8 @@ class PredicateCategorical(AttributePredicate):
 
     def __lt__(self, other: 'PredicateCategorical') -> bool:
         if isinstance(other, AttributePredicate):
-            other_index = other.index
-            self_index = self.index
+            other_index = other.attribute_index
+            self_index = self.attribute_index
             if self_index < other_index:
                 res = True
             elif self_index == other_index:
@@ -199,10 +210,10 @@ class PredicateCategorical(AttributePredicate):
 class PredicateRanged(AttributePredicate):
     '''Test if an entity numeric value falls in given range'''
     kind = PredicateKinds.RANGED
-
+    __slots__ = ('_interval',)
     def __init__(self, attribute: Attribute, interval: Interval,
-                 negated: bool=True) -> None:
-        super(PredicateRanged, self).__init__(attribute=attribute, negated=negated)
+                 negated: bool=True, index:int = None) -> None:
+        super(PredicateRanged, self).__init__(attribute=attribute, negated=negated, index=index)
         self._interval = interval
 
     label = property(lambda self:self._interval.name,None,'The label of the current range')
@@ -237,8 +248,8 @@ class PredicateRanged(AttributePredicate):
 
     def __lt__(self, other: 'PredicateRanged') -> bool:
         if isinstance(other, AttributePredicate):
-            other_index = other.index
-            self_index = self.index
+            other_index = other.attribute_index
+            self_index = self.attribute_index
             res = self_index < other_index or (self_index == other_index and self.range < other.range)
             return res
         else:
@@ -255,7 +266,8 @@ class PredicateRanged(AttributePredicate):
 class PredicateBoolean(AttributePredicate):
     '''Test if an entity numeric value falls in given range'''
     kind = PredicateKinds.BOOLEAN
-    
+    __slots__ = ()
+
     @property
     def label(self) -> str:
         '''The label of the current range'''
@@ -277,8 +289,8 @@ class PredicateBoolean(AttributePredicate):
 
     def __lt__(self, other: 'PredicateBoolean') -> bool:
         if isinstance(other, AttributePredicate):
-            other_index = other.index
-            self_index = self.index
+            other_index = other.attribute_index
+            self_index = self.attribute_index
             res = self_index < other_index or (self_index == other_index and self.negated < other.negated)
             return res
         else:

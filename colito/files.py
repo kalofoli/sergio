@@ -17,11 +17,11 @@ This offers an abstraction to avoid hard-conding of file paths,
 but instead allow for configurable folders depending on the kind of the requested file.
 """
 class FileManager:
-    class __Symbol:
+    class _Symbol:
         def __init__(self, name): self._name = name
         def __repr__(self): return f'[{self._name}]'
-    DEFAULT = __Symbol('DEFAULT')
-    NO_RESOLVE = __Symbol('NO_RESOLVE') # Do not resolve kind 
+    DEFAULT = _Symbol('DEFAULT')
+    NO_RESOLVE = _Symbol('NO_RESOLVE') # Do not resolve kind 
     
     def __init__(self, default_path = None, paths={}, allow_default=True) -> None:
         self._paths = dict()
@@ -114,14 +114,19 @@ class EnumFileManager(FileManager):
         'DATA:"./data", DEFAULT:"[DEFAULT]"'
         """
         if ignore_case:
-            members = {key.lower():member for key,member in self.Kinds.__members__.items()}
-            self._member_mapper = lambda x: members[x.lower()]
+            self._kinds_locase = {key.lower():member for key,member in self.Kinds.__members__.items()}
+            self._member_mapper = self._locase_getitem
         else:
             self._member_mapper = self.Kinds.__getitem__
         super().__init__(default_path=default_path, paths=paths, allow_default=allow_default)
         if self.default_kind is not None:
             self.set_kind_path(self.default_kind, self.DEFAULT)
         self._ignore_case = ignore_case
+    def _locase_getitem(self, what):
+        '''Helpr for case-insensitive lookup.
+        
+        Promoted to member to aid pickling.'''
+        return self._kinds_locase[what.lower()]
     @property
     def default_kind(self): return self.__default_kind__
     @property

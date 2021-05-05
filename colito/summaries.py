@@ -71,6 +71,7 @@ def summarise_exception(exc, summary_options:SummaryOptions):
 
 class Summarisable:
     summary_sibling_priority:int = 0
+    __slots__ = ()
     def __summary__(self, options:SummaryOptions = DEFAULT_SUMMARY_OPTIONS):
         '''The parameters to be included in the summary as a dict'''
         raise NotImplementedError()
@@ -83,6 +84,7 @@ class Summarisable:
 
 class SummarisableAsDict(Summarisable):
     __summary_conversions__ = {}
+    __slots__ = ()
     def __summary__(self, options: SummaryOptions = DEFAULT_SUMMARY_OPTIONS):
         smr = self.__summary_dict__(options)
         sc = _get_summary_conversions(self)
@@ -106,6 +108,7 @@ class SummarisableAsDict(Summarisable):
 
 class SummaryFields(list):
     '''Used as a base class for the __summary_fields__ member.'''
+    __slots__ = ()
     def __call__(self, cls):
         return list(self)
 
@@ -121,6 +124,7 @@ def _get_summary_fields(what):
 
 class SummaryFieldsAppend(SummaryFields):
     '''When used as a __summary_fields__ member it prepends the base class fields.'''
+    __slots__ = ()
     def __call__(self, cls):
         fields = super().__call__(cls)
         base = cls.__bases__[0]
@@ -129,6 +133,7 @@ class SummaryFieldsAppend(SummaryFields):
 
 class SummaryConversions(dict):
     '''Used as a base class for the __summary_conversions__ member.'''
+    __slots__ = ()
     def __call__(self, cls):
         return dict(self)
 
@@ -170,6 +175,7 @@ class SummarisableFromFields(SummarisableAsDict):
     """
     #: Specify the fields used for the summary.
     __summary_fields__ = {}
+    __slots__ = ()
     #: Specify the action in case of a missing field.
     __summary_onmissing__ = OnMissing.RAISE
     def __summary_dict__(self, options:SummaryOptions) -> typing.Dict[str, typing.Any]:
@@ -178,15 +184,18 @@ class SummarisableFromFields(SummarisableAsDict):
         return summary_from_fields(self, fields, missing=self.__summary_onmissing__)
 
 class SummarisableDict(dict, SummarisableAsDict):
+    __slots__ = ()
     def __summary_dict__(self, options:SummaryOptions) -> typing.Dict[str, typing.Any]:
         return self
 
 class SummarisableException(Exception, SummarisableAsDict):
+    __slots__ = ()
     def __summary_dict__(self, summary_options:SummaryOptions):
         return summarise_exception(self, summary_options)
         
 
 class SummarisableAsList(Summarisable):
+    __slots__ = ()
     def __summary__(self, options:SummaryOptions = DEFAULT_SUMMARY_OPTIONS):
         smr = self.__summary_list__(options)
         return SummarisableList(smr)
@@ -195,6 +204,7 @@ class SummarisableAsList(Summarisable):
         raise NotImplementedError()
 
 class SummarisableList(list, SummarisableAsList):
+    __slots__ = ()
     def __summary_list__(self, options:SummaryOptions) -> typing.List:
         return self
 

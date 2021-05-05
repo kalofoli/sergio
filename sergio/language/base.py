@@ -13,7 +13,7 @@ import numpy as np
 
 from colito.cache import ValueCache as Cache
 from colito.collection import ClassCollection
-from colito.indexing import Indexer, SimpleIndexer
+from colito.indexing import SimpleIndexer
 from colito.summaries import SummaryOptions, SummarisableList,\
     SummarisableAsDict, Summarisable
 from colito.logging import getModuleLogger
@@ -136,25 +136,31 @@ class Language(Summarisable, ClassCollectionFactoryRegistrar):
         '''Create a language parser object'''
         raise NotImplementedError()
 
-       
-class ConjunctionSelectorBase(SummarisableAsDict, LanguageSelector['ConjunctionLanguage']):
+ConjunctionLanguageType = TypeVar('ConjunctionLanguageType')
+class ConjunctionSelectorBase(SummarisableAsDict, LanguageSelector[ConjunctionLanguageType]):
     '''Selector taking the conjunction of a set of predicates'''
 
     def __init__(self, language: 'ConjunctionLanguage', predicates: PredicateOrIndexCollectionType, cache: CacheSpecType=True) -> None:
         super().__init__(language=language, cache=cache)
-        predicate_objects = sorted(self.language.predicate_objects(predicates))
+        predicate_objects = self.language.predicate_objects(predicates)
         self._predicate_indices: Tuple[int, ...] = tuple(language.predicate_indices(predicate_objects))
 
     @property_predicate_objects
     def predicates(self) -> Tuple[int, ...]:
         '''Predicates the current selector has'''
         return self._predicate_indices
+    predicates_path = predicates
 
     @property
     def indices(self) -> Tuple[int, ...]:
         '''Predicates the current selector has'''
         return self._predicate_indices
 
+    indices_path = indices
+    @property
+    def language(self) -> ConjunctionLanguageType:
+        return cast(ConjunctionLanguageType, self._language)
+    
     @Cache.cached_property
     def index_set(self) -> Set[int]:
         return set(self.indices)
@@ -248,12 +254,15 @@ class ConjunctionLanguage(SummarisableAsDict, Language):
     '''Language of predicate conjunctions'''
 
     __collection_tag__ = 'conjunctions'
+    __selector_class__ = ConjunctionSelector
     
     def __init__(self, data, predicates) -> None:
         super(ConjunctionLanguage, self).__init__(data=data)
         self._data = data
-        self._predicate_indexer = SimpleIndexer(predicates)
-        self._root: ConjunctionSelector = ConjunctionSelector(self, [])
+        predicates_srt = tuple(p.copy(index=index) for index,p in enumerate(sorted(predicates)))
+        self._predicate_indexer = SimpleIndexer(predicates_srt)
+        self._predicate_validities: np.ndarray = np.array(np.stack([predicate.validate() for predicate in self.predicates], axis=1), order='F')
+        self._root: Selector = self.__selector_class__(self, [])
     
     def validate(self, predicates: PredicateOrIndexCollectionType, out: np.ndarray=None):
         '''Compute the validity of a set of predicates'''
@@ -302,7 +311,7 @@ class ConjunctionLanguage(SummarisableAsDict, Language):
             indices = filter(lambda x: self.predicate_index(x) not in blacklist_set, indices)
         return iter(indices)
         
-    def refine(self, selector: ConjunctionSelectorBase, greater_only: Optional[bool]=False,
+    def refine(self, selector: ConjunctionSelectorBase, greater_only: Optional[bool]=True,
                blacklist: Optional[PredicateOrIndexCollectionType]=None) -> Iterator[ConjunctionSelectorBase]:
         '''Return a refinement of the specified selector'''
         extension_indices = self._indices_refinement_extensions(selector=selector, greater_only=greater_only, blacklist=blacklist)

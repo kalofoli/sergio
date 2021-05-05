@@ -41,10 +41,6 @@ class ClosureConjunctionSelector(ConjunctionSelector, LanguageSelector):
         local_cache.a.validity = validity
         super(ClosureConjunctionSelector, self).__init__(language=language, predicates=closure_indices, cache=local_cache)
 
-    @property
-    def language(self) -> 'ClosureConjunctionLanguageBase':
-        return cast(ClosureConjunctionLanguageBase, super(ClosureConjunctionSelector, self).language)
-
     @property_predicate_objects
     def predicates_path(self) -> Tuple[int, ...]:
         '''Predicates created as the current selector was a descendant of during its creation.'''
@@ -76,9 +72,9 @@ class ClosureConjunctionSelector(ConjunctionSelector, LanguageSelector):
         return validity
 
     @Cache.cached_property
-    def index_max(self):
-        '''The largest contained predicate without which the selector changes'''
-        index = self._language.index_last_needed(self.validity, self.indices)
+    def index_end(self):
+        '''The end of the needed predicates, without which which the selector changes'''
+        index = self._language.index_needed_end(self.validity, self.indices)
         return index
 
     @property
@@ -98,14 +94,14 @@ class ClosureConjunctionSelector(ConjunctionSelector, LanguageSelector):
         tail_indices = tuple(filter(lambda x: x < index_max, self.indices))
         return tail_indices
 
-    def extend(self, predicate: PredicateOrIndexType, _closure=None) -> 'ClosureConjunctionSelector':
+    def extend(self, predicate: PredicateOrIndexType) -> 'ClosureConjunctionSelector':
         '''Create a new selector with an extra predicate appended to the current one
         
         @param greater_only: If True, only the predicates after the extension are candidates for closure search. 
         '''
         extension_index = self.language.predicate_index(predicate)
         predicates = itertools.chain(self._indices_path, [extension_index])
-        return ClosureConjunctionSelector(self.language, predicates, _closure=_closure)
+        return self.__class__(self.language, predicates)
     
     @Cache.cached_property
     def closure_indices(self):
@@ -143,14 +139,14 @@ class ClosureConjunctionSelector(ConjunctionSelector, LanguageSelector):
         #    dct['compact_indices'] = self.indices_compact
         return dct
 
+
 class ClosureConjunctionLanguageBase(ConjunctionLanguage):
 
     __collection_tag__ = None
+    __selector_class__ = ClosureConjunctionSelector
 
     def __init__(self, data, predicates: PredicateCollectionType=None) -> None:
         super(ClosureConjunctionLanguageBase, self).__init__(data=data, predicates=predicates)
-        self._predicate_validities: np.ndarray = np.array(np.stack([predicate.validate() for predicate in self.predicates], axis=1), order='F')
-        self._root: ClosureConjunctionSelector = ClosureConjunctionSelector(self, [])
         self._predicate_supports: np.ndarray = self._predicate_validities.sum(axis=0)
     
     @property
@@ -177,7 +173,7 @@ class ClosureConjunctionLanguageBase(ConjunctionLanguage):
     def select(self, predicates, _closure=None):
         return ClosureConjunctionSelector(self, predicates_path=predicates, _closure=_closure)
     
-    def index_last_needed(self, validity: np.ndarray, indices: Tuple[int, ...]) -> int:
+    def index_needed_end(self, validity: np.ndarray, indices: Tuple[int, ...]) -> int:
         '''Return the predicate with the maximal index that is necessary to not change the selector support''' 
         if indices:
             support = validity.sum()
@@ -185,10 +181,10 @@ class ClosureConjunctionLanguageBase(ConjunctionLanguage):
             buffer = self._predicate_validities[:, indices_sorted]
             running_coverage = np.cumprod(buffer, out=buffer, axis=1, dtype=bool).sum(axis=0)
             closure_index = np.where(running_coverage == support)[0][0]
-            minimum_index = int(indices_sorted[closure_index])
+            index_end = int(indices_sorted[closure_index]) + 1
         else:
-            minimum_index = None
-        return minimum_index
+            index_end = 0
+        return index_end
         
     def indices_closure(self, validity: np.ndarray, candidate_indices=slice(None, None, None)) -> Tuple[int, ...]:
         '''Return the predicate indices forming the closure of the selector'''

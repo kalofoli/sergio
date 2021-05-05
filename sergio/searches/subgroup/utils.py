@@ -118,7 +118,8 @@ class SearchResultLogger(SearchVisitor):
 
 
 
-class GraphingSearchVisitor(SearchVisitor):
+
+class GraphingSearchVisitor():
     
     def __init__(self):
         self._graph = None
@@ -155,7 +156,9 @@ class GraphingSearchVisitor(SearchVisitor):
             pruned = new_state.selector not in valid_selectors
             self.add_edge(state, new_state, pruned=pruned)
             
-    def result_added(self, state): pass
+    def result_added(self, state, result_old): 
+        #print(f'New result: {state}')
+        pass
 
     def get_vertex(self, state):
         if state.selector not in self._vertices:
@@ -171,11 +174,12 @@ class GraphingSearchVisitor(SearchVisitor):
     def add_edge(self, state_src, state_dst, pruned): # dbg_remove
         vertex_dst = self.get_vertex(state_dst)
         vertex_src = self.get_vertex(state_src)
+        #print(vertex_src, vertex_dst)
         graph = self._graph
         edge = graph.add_edge(vertex_src,vertex_dst)
         graph.vp['valid'][vertex_dst] = not pruned
         graph.ep['order'][edge] = graph.num_edges()
-        graph.set_vertex_filter(graph.vp.valid)
+        #graph.set_vertex_filter(graph.vp.valid)
 
     def draw(self, **kwargs):
         from matplotlib import cm

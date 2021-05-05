@@ -95,6 +95,129 @@ class Indices:
         idx[~is_member] = -1
         return idx
 
+def _from_predicates2(fn):
+    def predicated(self, what, predicate):
+        candidates = self.predicates2candidates(predicate)
+        return fn(self, what, candidates)
+    return predicated
+
+def indices_slice(slicer, indices):
+    '''Returns a sliced list of a sliced version of each element of indices, where the slicing is done according to the slicer.
+    
+    The elements are assumed to be integer indices from a collection.
+    '''
+    if isinstance(indices, np.ndarray):
+        indices = [indices]
+        unwrap = True
+    else: unwrap = False
+    sliced_args = []
+    if slicer.dtype == bool:
+        for arg in indices:
+            if arg.dtype == bool:
+                sliced_arg = arg[slicer]
+            else:
+                sliced_arg = arg[slicer[arg]]
+            sliced_args.append(sliced_arg)
+    else:
+        raise NotImplementedError()
+    return sliced_args[0] if unwrap else sliced_args
+
+def indices_remove(indices, which):
+    '''Remove from a sorted index set a list of indices'''
+    x = np.searchsorted(indices, which)
+    if indices[x] == which:
+        return np.r_[indices[:x],indices[x+1:]]
+    else:
+        raise KeyError(f'No index {which} in index of size {indices}')
+    
+
+class ValidityPrincipalMatrix:
+    '''Holds a tighter copy of a subset of the validities''' 
+
+    def __init__(self, predicate_validities, effective_validity, candidates):
+        candidates = np.array(candidates)
+        # self._validities = np.array(predicate_validities[effective_validity, :], order='F')
+        self._predicate_validities = predicate_validities
+        self._effective_validity = effective_validity
+        self._candidate_validities = predicate_validities[np.ix_(effective_validity, candidates)]
+        self._supports = self._candidate_validities.sum(axis=0)
+        self._candidates = candidates
+        from colito.indexing import Indexer
+        self._candidate_indexer = Indexer(predicates=candidates,candidates=None)
+
+    @property
+    def ncols(self):
+        '''Number of predicates; or equivalently columns'''
+        return self._candidate_validities.shape[1]
+    
+    @property
+    def nrows(self):
+        '''Number of effectively selected instances; or equivalently rows'''
+        return self._candidate_validities.shape[0]
+    
+    @property
+    def candidate_ev(self):
+        '''Candidate effective validities. The selected validity subset'''
+        return self._candidate_validities
+    
+    @property
+    def candidate_supports(self):
+        return self._supports
+    
+    def get_candidate_supports(self, ev, candidates=None):
+        '''Return the supports of contained candidates.
+        
+        Candidates are a subset of predicates, and their indices correspond to the block column indices.'''
+        if ev.mean()>.5:
+            sup_neg = self._block_index(~ev, candidates).sum(axis=0)
+            sup = self._supports - sup_neg
+        else:
+            sup = self._block_index(ev, candidates).sum(axis=0)
+        return sup
+
+    def get_candidate_ev(self, sel, candidate):
+        return self._block_index(sel, candidate)
+    
+    def _block_index(self, idl, what):
+        if idl is None:
+            idl = slice(None, None)
+        if isinstance(what, slice) or not isinstance(what, Iterable):
+            index = (idl, what)
+        else:
+            index = np.ix_(idl, what)
+        return self._candidate_validities[index]
+
+    def candidate_validity(self, candidate):
+        return self._candidate_validities[:, candidate]
+    
+    def predicates2candidates(self, predicates):
+        return self._candidate_indexer.predicates2candidates_value[predicates]
+    
+    def candidates2predicates(self, candidates):
+        return self._candidate_indexer.candidates2predicates_value[candidates]
+    
+    def candidate_all(self, sel, candidates):
+        return self._block_index(sel, candidates).all(axis=0)
+
+    def candidate_any(self, sel, candidates):
+        return self._block_index(sel, candidates).any(axis=0)
+
+    def select_candidates(self, which):
+        candidates = indices_slice(which, self._candidates)
+        predicates = self.candidates2predicates(candidates)
+        res = ValidityPrincipalMatrix(
+            self._predicate_validities,
+            effective_validity=self._effective_validity,
+            candidates=predicates
+        )
+        return res
+     
+    predicate_all = _from_predicates2(candidate_all)
+    predicate_any = _from_predicates2(candidate_any)
+    get_predicate_supports = _from_predicates2(get_candidate_supports)
+    get_predicate_ev = _from_predicates2(get_candidate_ev)
+
+
 
 class EffectiveValiditiesTracker:
     '''Holds a tighter copy of the current effective validities''' 
@@ -126,6 +249,10 @@ class EffectiveValiditiesTracker:
         # cythonise?
         return self._validities[np.ix_(ev, predicates)].sum(axis=0)
 
+    def intersection_support_of(self, predicate, predicates):
+        ev = self.validities[:,predicate]
+        return self.supports_of(ev, predicates)
+    
     def validity_of(self, ev, predicate):
         # cythonise?
         if isinstance(predicate, Iterable):
@@ -246,7 +373,16 @@ class EffectiveValiditiesView:
     @property
     def candidates(self):
         return self._candidates
-
+    
+    def supports(self):
+        '''Return candidate supports'''
+        return self._supports
+    
+    @property
+    def minsup_predicate(self):
+        '''Predicate (index) with the minimum support among the candidates'''
+        return self.candidates[np.argmin(self.supports)]
+        
     def supports_of(self, predicates):
         candidates = self._map_predicate2candidate[predicates]
         return self._supports[candidates]

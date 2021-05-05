@@ -7,6 +7,7 @@ Created on Mar 10, 2021
 
 import typing
 from types import SimpleNamespace
+from typing import Union
 EntryType = typing.TypeVar('EntryType')
 class NamedDictView(typing.Generic[EntryType]):
     def __init__(self, name, dct, fmt_key=repr, fmt_val=repr):
@@ -94,12 +95,32 @@ class ClassCollection:
             raise KeyError(f'Attempting to register already existing class {cls}.')
         tag = cls.__collection_tag__
         if tag in self._tags:
-            raise KeyError(f'Attempting to register {cls} which has an already existing tag {tag}->{self.tags[tag]}.')
+            raise KeyError(f'Attempting to register {cls} which has an already existing tag "{tag}" ==> {self.tags[tag]}.')
         title = self._get_title(cls)
         if title in self._titles:
-            raise KeyError(f'Attempting to register {cls} which has an already existing title {title}->{self.titles[title]}.')
+            raise KeyError(f'Attempting to register {cls} which has an already existing title "{title}" ==> {self.titles[title]}.')
         self._tags[tag] = cls
         self._titles[title] = cls
+    def _deregister(self, what: Union[type, str]):
+        '''De-register a previously registered class.
+        
+        :param what: Either the class, tag or the title used.'''
+        if isinstance(what, type):
+            cls = what
+        elif isinstance(what, str):
+            if what in self._tags:
+                cls = self._tags[what]
+            elif what in self._titles:
+                cls = self._titles
+            else:
+                raise KeyError(f'Attempting to deregister "{what}" which is neither a known tag nor a known title.')                
+        else:
+            raise TypeError(f'Attempting to deregister {what} of type {type(what).__name__} which is neither a class nor a tring.')
+        tag = cls.__collection_tag__
+        title = self._get_title(cls)
+        del self._tags[tag]
+        del self._titles[title]
+        
     def _register_base(self, cls):
         self.base = cls
     

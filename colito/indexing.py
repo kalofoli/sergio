@@ -87,8 +87,18 @@ class Indexer:
         else:
             dct.update({name_b:map_a2b,name_a:map_b2a})
         dct.update({'_'+a2b:map_a2b,'_'+b2a:map_b2a})
+        dct.update({a2b+'_value':self._ValueGetter(map_a2b), b2a+'_value': self._ValueGetter(map_b2a)})
         self.__dict__ = dct
         self._with_original = with_original
+    class _ValueGetter:
+        def __init__(self, map_):
+            self._map = map_
+        def __getitem__(self, what):
+            res = self._map.loc[what]
+            if np.ndim(res):
+                res = res.values
+            return res
+        
     def __len__(self): return self.__dict__['__len__']
     def __str__(self):
         sori = "[ORIG] " if self._with_original else ""

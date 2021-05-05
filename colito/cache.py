@@ -273,10 +273,17 @@ class ValueCache(dict):
                 self._cache[name] = value
         
         def __getattr__(self, name):
-            return self._cache[name]
+            try:
+                return self._cache[name]
+            except KeyError as e:
+                raise AttributeError( "{self.__class__.__name__} object has no attribute '{name}'")
+            
             
         def __delattr__(self, name):
-            del self._cache[name]
+            try:
+                del self._cache[name]
+            except KeyError as e:
+                raise AttributeError()
     
     def __init__(self, *args, enabled=True, **kwargs):
         self._enabled = enabled

@@ -52,6 +52,7 @@ def rename_columns(df, reg, txt,regexp=False, inplace=False):
 DataFrame.rename_columns = rename_columns
 #TODO: Monkey patching is UGLY. Move to a better place.
 
+OptimisationResult = namedtuple('OptimisationResult' ,('result_history', 'subgroups', 'search'))
 class Computation(SummarisableFromFields):
     SCORE_CONFIGS = ['AverageCoreness']
     __summary_fields__ = ('tag', 'runtime_environment', 'dataset', 'language', 'measure',
@@ -71,7 +72,7 @@ class Computation(SummarisableFromFields):
         self._gramian = None
         self._kernel = None
         self._tag = tag if tag is not None else str(datetime.timestamp(datetime.now()))
-        self._result = self.OptimisationResult(None, None, None)
+        self._result = OptimisationResult(None, None, None)
         self._log = log
         self._resume = None
         self._result_history = None
@@ -340,8 +341,7 @@ class Computation(SummarisableFromFields):
         return self
 
     
-    OptimisationResult = namedtuple('OptimisationResult' ,('result_history', 'subgroups', 'search'))
-    def optimise(self, k=1, depths=6,approximation_factor=1, state_scoring=None,refinement_scoring=None, track_results=False, initial_subgroups=None):
+    def optimise(self, k=1, depths=6,approximation_factor=1, state_scoring=None, track_results=False, initial_subgroups=None):
         r'''
         >>> import sergio.scores.scalars
         >>> c = Computation(cache=None, tag='doctest', file_manager=FileManager('datasets'))\
@@ -367,7 +367,7 @@ class Computation(SummarisableFromFields):
         iddfs = IterativeDeepening(self._language, self._measure, self._oest,
                                    k=k, depths=depths,
                                    approximation_factor=approximation_factor,
-                                   state_scoring=state_scoring, refinement_scoring=refinement_scoring,
+                                   state_scoring=state_scoring,
                                    dfs=dfs
                                    )
         self._log.info(f'Starting Optimisation algorithm for k={k}, depths={depths}, language={self._language}, measure={self._measure}, oest={self._oest}.')
@@ -379,12 +379,14 @@ class Computation(SummarisableFromFields):
         except KeyboardInterrupt as _:
             self._resume = iddfs.states
             aborted = True
-        subgroups = iddfs.subgroups()
+        subgroups = iddfs.subgroups
         self._log.info(f'Optimisation {"aborted" if aborted else "completed"} with results {to_stuple(subgroups,join=",")}.')
-        return self.OptimisationResult(result_history=result_history, search=iddfs, subgroups=subgroups)
+        return OptimisationResult(result_history=result_history, search=iddfs, subgroups=subgroups)
     
-    def optimise_inplace(self, k=1, depths=6,approximation_factor=1, state_scoring=None,refinement_scoring=None, track_results=False, initial_subgroups=None):
-        self._result = self.optimise(k=k, depths=depths, approximation_factor=approximation_factor, state_scoring=state_scoring, refinement_scoring=refinement_scoring, track_results=track_results, initial_subgroups=initial_subgroups)
+    def optimise_inplace(self, k=1, depths=6,approximation_factor=1, state_scoring=None, track_results=False, initial_subgroups=None):
+        if initial_subgroups is None:
+            initial_subgroups = self._result.subgroups
+        self._result = self.optimise(k=k, depths=depths, approximation_factor=approximation_factor, state_scoring=state_scoring, track_results=track_results, initial_subgroups=initial_subgroups)
         return self
     
     def __summary_dict__(self, options:SummaryOptions):

@@ -257,8 +257,11 @@ class LevelIsOn:
         self._logger = logger
     
     def __getattr__(self, level_name):
-        lvl = resolve_level_value(level_name.upper())
-        return self._logger.isEnabledFor(lvl)
+        try:
+            lvl = resolve_level_value(level_name.upper())
+            return self._logger.isEnabledFor(lvl)
+        except ValueError:
+            raise AttributeError(f"{self.__class__.__name__} object has no attribute '{level_name}.")
     
     def __dir__(self): return tuple(map(str.lower, _nameToLevel.keys()))
     def __str__(self):

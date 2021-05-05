@@ -12,7 +12,7 @@ import numpy as np
 from sergio.language import Selector, ConjunctionLanguage, ConjunctionSelector
 from sergio.scores import Measure, OptimisticEstimator
 
-from colito.summaries import SummarisableFromFields
+from colito.summaries import SummarisableFromFields, SummarisableList
 from colito.queues import Entry, TopKQueue
 from colito.logging import getModuleLogger
 from colito.collection import ClassCollectionFactoryRegistrar, ClassCollection
@@ -126,7 +126,8 @@ class SubgroupSearch(SummarisableFromFields,ClassCollectionFactoryRegistrar):
     __collection_factory__ = SUBGROUP_SEARCHES
 
     __summary_fields__ = ['subgroups','approximation_factor','k','language','measure','optimistic_estimator', 'time_elapsed', 'time_started', 'status']
-    
+    __summary_convert__ = {'subgroups': SummarisableList}
+
     def __init__(self, language:ConjunctionLanguage, measure:Measure, optimistic_estimator:OptimisticEstimator, k:int=1, max_best:bool=True, approximation_factor:float=1.) -> None:
         self._language:ConjunctionLanguage = language
         self._measure:Measure = measure
@@ -193,6 +194,10 @@ class SubgroupSearch(SummarisableFromFields,ClassCollectionFactoryRegistrar):
         return self._results
     
     @property
+    def subgroups(self) -> Tuple[ConjunctionSelector, ...]:
+        return tuple(element.data.selector for element in self.results.entries())
+    
+    @property
     def language(self) -> ConjunctionLanguage:
         '''The used language'''
         return self._language
@@ -257,6 +262,4 @@ class SubgroupSearch(SummarisableFromFields,ClassCollectionFactoryRegistrar):
             self.try_add_result(result, quiet=quiet)
         return None
     
-    def subgroups(self) -> Tuple[ConjunctionSelector, ...]:
-        return tuple(element.data.selector for element in self.results.entries())
 
