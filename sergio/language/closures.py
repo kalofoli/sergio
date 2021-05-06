@@ -7,8 +7,8 @@ Created on May 3, 2021
 import numpy as np
 from .base import ConjunctionSelector, LanguageSelector, Cache, \
     property_predicate_objects, Predicate, \
-    PredicateOrIndexCollectionType, PredicateOrIndexType, CacheSpecType, \
-    property_predicate_objects
+    PredicateOrIndexCollectionType, PredicateOrIndexType, CacheSpecType
+    
 
 from .utils import EffectiveValiditiesTracker, EffectiveValiditiesView, CandidateRestriction, Indices
 
@@ -18,7 +18,7 @@ from sergio.language.base import PredicateCollectionType, Selector,\
     ConjunctionLanguage
 from colito.summaries import SummaryOptions
 from colito.logging import getModuleLogger
-
+from sergio.language.utils import indices_remove
 
 log = getModuleLogger(__name__)
 
@@ -26,36 +26,16 @@ log = getModuleLogger(__name__)
 class ClosureConjunctionSelector(ConjunctionSelector, LanguageSelector):
 
     def __init__(self, language: 'ClosureConjunctionLanguageBase',
-                 predicates_path: PredicateOrIndexCollectionType,
+                 predicates: PredicateOrIndexCollectionType,
                  cache: CacheSpecType=True,
-                 _closure: PredicateOrIndexCollectionType=None) -> None:
-        self._language: ClosureConjunctionLanguageBase
-        self._indices_path: Tuple[int, ...] = tuple(language.predicate_indices(predicates_path))
-        local_cache = Cache.from_spec(cache)
-        validity = language.validate(self._indices_path)
-        if _closure is None:
-            closure_indices = language.indices_closure(validity)
-        else:
-            closure_indices_raw = language.predicate_indices(_closure)
-            closure_indices = tuple(set(closure_indices_raw) | set(self._indices_path))
-        local_cache.a.validity = validity
-        super(ClosureConjunctionSelector, self).__init__(language=language, predicates=closure_indices, cache=local_cache)
+                 _closure_indices: np.ndarray=None,
+                 _index_needed_end:int = None,
+                 _indices_sorted: np.ndarray=None) -> None:
+        super().__init__(language=language, predicates=predicates, cache=cache, _indices_sorted=_indices_sorted)
+        self._closure_indices = _closure_indices
+        if _index_needed_end is not None:
+            self._cache.update(index_needed_end = _index_needed_end)
 
-    @property_predicate_objects
-    def predicates_path(self) -> Tuple[int, ...]:
-        '''Predicates created as the current selector was a descendant of during its creation.'''
-        return self._indices_path
-
-    @property
-    def indices_path(self) -> Tuple[int, ...]:
-        '''Indices of predicates created as the current selector was a descendant of during its creation.'''
-        return self._indices_path
-    
-    @property
-    def index_last_extension(self):
-        '''The index of the last predicate used to refine this selector'''
-        return self.indices_path[-1] if self.indices_path else None
-    
     @Cache.cached_property
     def indices_compact(self) -> Tuple[int, ...]:
         indices_compact = self.language.indices_minimal_approximation(self.validity)
@@ -66,23 +46,18 @@ class ClosureConjunctionSelector(ConjunctionSelector, LanguageSelector):
         '''Predicate indices in the closure'''
         return self.indices_compact
 
-    @Cache.cached_property
+    #@Cache.cached_property
+    @property
     def validity(self) -> np.ndarray:
         validity = self.language.validate(self.predicates)
         return validity
 
     @Cache.cached_property
-    def index_end(self):
+    def index_needed_end(self):
         '''The end of the needed predicates, without which which the selector changes'''
         index = self._language.index_needed_end(self.validity, self.indices)
         return index
 
-    @property
-    def path_description(self) -> str:
-        path_selector = ConjunctionSelector(self.language, predicates=self.predicates_path, cache=False)
-        return str(path_selector)
-
-    
     @property
     def predicate_max(self) -> Predicate:
         index_max = self.index_max
@@ -100,20 +75,20 @@ class ClosureConjunctionSelector(ConjunctionSelector, LanguageSelector):
         @param greater_only: If True, only the predicates after the extension are candidates for closure search. 
         '''
         extension_index = self.language.predicate_index(predicate)
-        predicates = itertools.chain(self._indices_path, [extension_index])
+        predicates = itertools.chain(self.indices, [extension_index])
         return self.__class__(self.language, predicates)
     
-    @Cache.cached_property
-    def closure_indices(self):
-        return self._language.indices_closure(self)
+    @property
+    def closure_indices(self) -> np.ndarray:
+        if self._closure_indices is None:
+            indices_closure = self._language.indices_closure(self.validity, blacklist=self.indices)
+            self._closure_indices = np.sort(np.r_[indices_closure, self.indices])
+        return self._closure_indices
     
     def __repr__(self):
-        predicates = ' AND '.join(map(repr, self.predicates_path))
-        
-        return '<{0.__class__.__name__}: {1}>'.format(self, predicates)
-
-    def __str__(self):
-        return self.path_description
+        spreds = ' AND '.join(map(repr, self.predicates))
+        sclos = f'{len(self.closure_indices)}' if self._closure_indices is not None else '?'
+        return f'<{__class__.__name__} {len(self.indices)}/{sclos}: {spreds}>'
 
     class Digest(NamedTuple):  # pylint: disable = too-few-public-methods
         indices: List[int]
@@ -170,15 +145,13 @@ class ClosureConjunctionLanguageBase(ConjunctionLanguage):
         minimal_indices = indices_closure[minimal_indices_closure]
         return tuple(map(int, minimal_indices))
     
-    def select(self, predicates, _closure=None):
-        return ClosureConjunctionSelector(self, predicates_path=predicates, _closure=_closure)
-    
     def index_needed_end(self, validity: np.ndarray, indices: Tuple[int, ...]) -> int:
         '''Return the predicate with the maximal index that is necessary to not change the selector support''' 
         if indices:
             support = validity.sum()
             indices_sorted = sorted(indices)
             buffer = self._predicate_validities[:, indices_sorted]
+            ## TODO: Speedup
             running_coverage = np.cumprod(buffer, out=buffer, axis=1, dtype=bool).sum(axis=0)
             closure_index = np.where(running_coverage == support)[0][0]
             index_end = int(indices_sorted[closure_index]) + 1
@@ -186,13 +159,16 @@ class ClosureConjunctionLanguageBase(ConjunctionLanguage):
             index_end = 0
         return index_end
         
-    def indices_closure(self, validity: np.ndarray, candidate_indices=slice(None, None, None)) -> Tuple[int, ...]:
+    def indices_closure(self, validity: np.ndarray, blacklist=None) -> Tuple[int, ...]:
         '''Return the predicate indices forming the closure of the selector'''
-        num_indices = len(self.predicates)
-        indices = np.arange(num_indices)[candidate_indices]
-        closure_index_candidates = np.where(self._predicate_validities[np.ix_(validity, indices)].all(axis=0))[0]
-        closure_index = indices[closure_index_candidates]
-        return tuple(map(int, closure_index))
+        from .utils import ValidityPrincipalMatrix
+        if blacklist is not None:
+            vpm = ValidityPrincipalMatrix(self._predicate_validities, validity, blacklist=blacklist)
+            is_superset = vpm._supports == vpm.nrows
+            indices = vpm.candidates2predicates(is_superset)
+        else:
+            indices = np.where(self._predicate_validities[validity, :].all(axis=0))[0]
+        return indices
 
     def _get_validity_and_support(self, what:Union[Predicate, Selector]):
         if isinstance(what, Predicate):
@@ -241,7 +217,8 @@ class ClosureConjunctionLanguageRestricted(ClosureConjunctionLanguageBase):
     __collection_tag__ = 'closure-conjunctions-restricted'
 
     def refine(self, selector: ClosureConjunctionSelector, blacklist: PredicateOrIndexCollectionType=None) -> Iterator[ClosureConjunctionSelector]:
-        
+        import warnings
+        warnings.warn('Incomplete code. Untested. Avoid using.')
         num_predicates = len(self.predicates)
         if blacklist is not None:
             blacklist = np.fromiter(self.predicate_indices(blacklist),int)
@@ -272,6 +249,7 @@ class ClosureConjunctionLanguageRestricted(ClosureConjunctionLanguageBase):
             restrictions.append(root_cr)
        
         while restrictions:
+            
             restriction = restrictions.pop()
             
             min_ext = restriction.minsup_extension
@@ -333,6 +311,70 @@ class ClosureConjunctionLanguageRestricted(ClosureConjunctionLanguageBase):
                 restrictions.append(restr_non_ss)
                 # print(restr_non_ss.dump())                
                 # print(f'NSS restriction: {restr_non_ss}')
+        
+#         if False:
+#             '''DEVELOPMENT CODE re-implementing the above more correctly, but NOT COMPLETE'''
+#             ev_pm = ValidityPrincipalMatrix(self.predicate_validities, selector.validity, idl_whitelist)
+#             
+#             if blacklist is not None:
+#                 idx_blacklist = np.fromiter(self.predicate_indices(blacklist),int)
+#                 idl_whitelist[idx_blacklist] = False
+#             else:
+#                 idx_blacklist = np.zeros(0, int)
+#             
+#             idc_blacklist = ev_pm.predicates2candidates(idx_blacklist)
+#             idc_whitelist = ev_pm.predicates2candidates(idl_whitelist)
+#             
+#             is_root_superset = ev_pm.candidate_supports == sup_root
+#             if is_root_superset[idc_blacklist].any():
+#                 return
+#             
+#             'Remove whitelisted with empty support and those with full support' 
+#             is_ok = ~(is_root_superset | (ev_pm.candidate_supports == 0) )
+#             ev_pm = ev_pm.select_candidates(is_ok)
+#             idc_whitelist,idc_blacklist = indices_slice(is_ok, (idc_whitelist, idc_blacklist))
+#             
+#             states = []
+#             if len(idc_whitelist):
+#                 state0 = State(candidate=np.argmin(ev_pm.candidate_supports), whitelist=idc_whitelist, blacklist=idc_blacklist)
+#                 states.append(state0)
+#             
+#             while states:
+#                 state = states.pop()
+#                 
+#                 ev_cand = ev_pm.get_candidate_ev(None, state.candidate)
+#                 sup_cand = ev_pm.candidate_supports[state.candidate]
+#                 bl_supports = ev_pm.get_candidate_supports(ev_cand, state.blacklist)
+#                 'Ignore blacklisted'
+#                 if np.max(bl_supports, initial=-1) == sup_cand:
+#                     continue
+#                 
+#                 if not len(state.whitelist):
+#                     continue
+#                 
+#                 wl_supports_inner = ev_pm.get_candidate_supports(ev_cand, state.whitelist)
+#                 wl_supports_outer = ev_pm.candidate_supports - wl_supports_inner
+#                 
+#                 is_super = wl_supports_inner == sup_cand
+#                 is_cover = is_super & (wl_supports_outer == 0)
+#                 
+#                 new_states = []
+#                 ''' Add each proper superset with the current predicate as covered'''
+#     
+#                 proper_cands = np.where(is_super & ~is_cover)[0]
+#                 
+#                 for proper_cand in proper_cands:
+#                     idc_wl_new = indices_remove(idc_whitelist, state.candidate)
+#                     new_state = State(proper_cand, idc_wl_new, idc_blacklist)
+#                     new_states.append(new_state)
+#                 
+#                 if wl_supports_inner[:state.candidate].max() == 0:
+#                     'We are the lowest index for this intersection. Add.'
+#                     refinement = selector.extend(state.predicate, covered=state.covered)
+#                     yield refinement 
+#                 
+#                 states += sorted(new_states, key = lambda s:-s.support)
+#             
 
         
 class ClosureConjunctionLanguageFull(ClosureConjunctionLanguageBase):

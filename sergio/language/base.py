@@ -19,6 +19,7 @@ from colito.summaries import SummaryOptions, SummarisableList,\
 from colito.logging import getModuleLogger
 from ..predicates import Predicate
 from colito.collection import ClassCollectionFactoryRegistrar
+from sergio.language.utils import indices_remove
 
 PredicateCollectionType = Iterable[Predicate]  # pylint: disable=invalid-name
 PredicateOrIndexType = Union[Predicate, int]  # pylint: disable=invalid-name
@@ -110,7 +111,6 @@ class LanguageSelector(Generic[LanguageType], Selector):
         return self._cache
 
 
-
 LANGUAGES = ClassCollection('Language')
 
 class Language(Summarisable, ClassCollectionFactoryRegistrar):
@@ -140,59 +140,61 @@ ConjunctionLanguageType = TypeVar('ConjunctionLanguageType')
 class ConjunctionSelectorBase(SummarisableAsDict, LanguageSelector[ConjunctionLanguageType]):
     '''Selector taking the conjunction of a set of predicates'''
 
-    def __init__(self, language: 'ConjunctionLanguage', predicates: PredicateOrIndexCollectionType, cache: CacheSpecType=True) -> None:
+    def __init__(self, language: 'ConjunctionLanguage', predicates: PredicateOrIndexCollectionType, cache: CacheSpecType=True, _indices_sorted=None) -> None:
         super().__init__(language=language, cache=cache)
-        predicate_objects = self.language.predicate_objects(predicates)
-        self._predicate_indices: Tuple[int, ...] = tuple(language.predicate_indices(predicate_objects))
+        self._predicate_indices: Tuple[int, ...] = tuple(self.language.predicate_indices(predicates))
+        self._indices_sorted = _indices_sorted
+
+    @Cache.cached_property
+    def indices_sorted(self):
+        '''Return the indices in a sorted order, according the language ordering'''
+        if self._indices_sorted is not None:
+            return self._indices_sorted
+        else:
+            return np.sort(self.indices)
 
     @property_predicate_objects
     def predicates(self) -> Tuple[int, ...]:
         '''Predicates the current selector has'''
         return self._predicate_indices
-    predicates_path = predicates
-
+    
     @property
     def indices(self) -> Tuple[int, ...]:
         '''Predicates the current selector has'''
         return self._predicate_indices
 
     indices_path = indices
+    
     @property
     def language(self) -> ConjunctionLanguageType:
         return cast(ConjunctionLanguageType, self._language)
     
-    @Cache.cached_property
-    def index_set(self) -> Set[int]:
-        return set(self.indices)
-
     @Cache.cached_property
     def validity(self) -> np.ndarray:
         validity = self.language.validate(self.predicates)
         return validity
 
     @property
+    def pruning_indices(self):
+        '''Return a list of indices that would not allow this selector to be created again'''
+        return self._predicate_indices[-1:] 
+
+    @property
     def refinements(self) -> Sequence['ConjunctionSelectorBase']:
         return list(self._language.refine(self))
 
-    @property
-    def index_max(self) -> int:
-        '''The index of the largest contained predicate w.r.t. the implied total predicate ordering'''
-        indices = self._predicate_indices
-        return indices[-1] if indices else None
-    
-    @property
-    def predicate_max(self) -> Predicate:
-        '''The largest contained predicate w.r.t. the implied total predicate ordering'''
-        max_index = self.index_max
-        return None if max_index is None else self.language.predicate_object(max_index)
-    
     def extend(self, predicate: PredicateOrIndexType) -> 'ConjunctionSelector':
         '''Create a new selector with an extra predicate appended to the current one'''
         raise NotImplementedError()
     
     def __contains__(self, predicate: PredicateOrIndexType) -> bool:
-        index = self.language.predicate_index(predicate)
-        return index in self.index_set
+        if self._predicate_indices:
+            index = self.language.predicate_index(predicate)
+            indices_sorted = self.indices_sorted
+            pos = np.searchsorted(indices_sorted, index)
+            return index == indices_sorted[pos]
+        else:
+            return False
 
     def __repr__(self):
         predicates = ' AND '.join(map(repr, self.predicates))
@@ -218,22 +220,13 @@ class ConjunctionSelectorBase(SummarisableAsDict, LanguageSelector[ConjunctionLa
 class ConjunctionSelector(ConjunctionSelectorBase):
     '''Selector taking the conjunction of a set of predicates'''
 
-    def __init__(self, language: 'ConjunctionLanguage', predicates: PredicateOrIndexCollectionType, cache: CacheSpecType=True) -> None:
-        predicates = tuple(predicates)
-        super().__init__(language=language, predicates=predicates, cache=cache)
-        self._index_last_extension = self.language.predicate_index(predicates[-1]) if predicates else None
-
     def extend(self, predicate: PredicateOrIndexType) -> 'ConjunctionSelector':
         '''Create a new selector with an extra predicate appended to the current one'''
         extension_index = self.language.predicate_index(predicate)
         predicate_indices = chain(self.indices, [extension_index])
         return ConjunctionSelector(self.language, predicate_indices)
     
-    @property
-    def index_last_extension(self):
-        '''The index of the last predicate used to refine this selector'''
-        return self._index_last_extension
-
+    
     class Digest(NamedTuple):  # pylint: disable = too-few-public-methods
         indices: List[int]
     
@@ -295,26 +288,14 @@ class ConjunctionLanguage(SummarisableAsDict, Language):
     def __repr__(self):
         return '<{0.__class__.__name__}: of {1} predicates>'.format(self, len(self.predicates))
 
-    def _indices_refinement_extensions(self, selector: ConjunctionSelectorBase, greater_only: Optional[bool]=False,
-                                       blacklist: Optional[PredicateOrIndexCollectionType]=None) -> Iterator[int]:
-        '''Iterate through those predicate indices that create refinements through extending a current selector'''
-        max_index = selector.index_max
-        num_predicates = len(self.predicates)
-        indices: Iterator[int]
-        if greater_only:
-            index = max_index if max_index is not None and greater_only else -1
-            indices = iter(range(index + 1, num_predicates))
-        else:
-            indices = filter(lambda p: p not in selector, range(num_predicates))
-        if blacklist is not None:
-            blacklist_set = set(self.predicate_indices(blacklist))
-            indices = filter(lambda x: self.predicate_index(x) not in blacklist_set, indices)
-        return iter(indices)
-        
-    def refine(self, selector: ConjunctionSelectorBase, greater_only: Optional[bool]=True,
-               blacklist: Optional[PredicateOrIndexCollectionType]=None) -> Iterator[ConjunctionSelectorBase]:
+    def refine(self, selector: ConjunctionSelectorBase, blacklist: Optional[PredicateOrIndexCollectionType]=None) -> Iterator[ConjunctionSelectorBase]:
         '''Return a refinement of the specified selector'''
-        extension_indices = self._indices_refinement_extensions(selector=selector, greater_only=greater_only, blacklist=blacklist)
+        num_predicates = len(self.predicates)
+        index_end = np.max(selector.indices, initial=-1)+1
+        extension_indices = np.arange(index_end, num_predicates)
+        if blacklist is not None:
+            blacklist = tuple(self.predicate_indices(blacklist))
+            extension_indices = indices_remove(extension_indices, blacklist, ignore_missing=True)
         return map(selector.extend, extension_indices)
 
     def predicate_index(self, predicate: PredicateOrIndexType) -> int:
@@ -387,9 +368,13 @@ class ConjunctionLanguage(SummarisableAsDict, Language):
     def make_parser(self) -> 'ConjunctionLanguage.SelectorParser':
 
         def make_selector(predicates):
-            return ConjunctionSelector(self, predicates)
+            return self.__selector_class__(self, predicates)
 
-        return ConjunctionLanguage.SelectorParser(self, make_selector)
+        return self.SelectorParser(self, make_selector)
+    
+    def selector(self, predicates:PredicateOrIndexCollectionType, **kwargs):
+        '''Create a selector from given predicates'''
+        return self.__selector_class__(self, predicates, **kwargs)
     
     def deserialise_selector(self, digest):
         return ConjunctionSelector.deserialise(self, digest)

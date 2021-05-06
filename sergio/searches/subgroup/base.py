@@ -45,24 +45,32 @@ class AddResultOutcome(NamedTuple):
     objective_value: float
 
 
-class SearchState(NamedTuple):
-    search:'LanguageTopKBranchAndBound'
-    selector: Selector
-    pruned: typing.Set[int]
-    covered: typing.Set[int]
-    depth:int
+class SearchState:
+    __slots__ = ('search','selector','pruned','depth','_objective_value','_optimistic_estimate')
+    
+    def __init__(self, search:'LanguageTopKBranchAndBound', selector: Selector, pruned: typing.Set[int], depth: int):
+        self.search:'LanguageTopKBranchAndBound' = search
+        self.selector: Selector = selector
+        self.pruned: typing.Set[int] = pruned
+        self.depth:int = depth
+        self._optimistic_estimate = None
+        self._objective_value = None
     
     @property
     def optimistic_estimate(self)-> float:
-        return self.search.optimistic_estimator.evaluate(self.selector)
+        if self._optimistic_estimate is None:
+            self._optimistic_estimate = self.search.optimistic_estimate(self.selector)
+        return self._optimistic_estimate
     
     @property
     def objective_value(self)-> float:
-        return self.search.measure.evaluate(self.selector)
+        if self._objective_value is None:
+            self._objective_value = self.search.objective_value(self.selector)
+        return self._objective_value
     
     @property
     def blacklist(self):
-        return self.pruned | self.covered
+        return self.pruned
 
     @staticmethod
     def set2str(indices, total, sep='+-'):
@@ -78,10 +86,11 @@ class SearchState(NamedTuple):
     def __str__(self):
         set2str = self.set2str
         num_preds = len(self.selector.language.predicates)
-        return (fr'({self.objective_value:5.3f}/{self.optimistic_estimate:5.3f}'
-                fr'|@{self.depth}\{len(self.pruned)}+{len(self.covered):3d}'
+        prn = lambda v: f'{v:5.3f}' if v is not None else 'XXXXX'
+        return (fr'({prn(self._objective_value)}/{prn(self._optimistic_estimate)}'
+                fr'|@{self.depth}\{len(self.pruned)}'
                 fr'|{self.selector}{self.selector.indices_path if hasattr(self.selector,"indices_path") else ""}'
-                fr'\({set2str(self.covered,num_preds,sep="-+")}U{set2str(self.pruned,num_preds,sep="-+")})')
+                fr'\({set2str(self.pruned,num_preds,sep=",")})')
 
     def __repr__(self):
         return f'<{self.__class__.__name__}{self!s}>'
@@ -211,7 +220,17 @@ class SubgroupSearch(SummarisableFromFields,ClassCollectionFactoryRegistrar):
     def optimistic_estimator(self) -> OptimisticEstimator:
         '''The used optimistic estimator'''
         return self._optimistic_estimator
+
+    def objective_value(self, selector:Selector) -> float:
+        '''Compute objective value
+        Used as callback from SearchState'''
+        return self.measure.evaluate(selector)
     
+    def optimistic_estimate(self, selector:Selector) -> float:
+        '''Compute optimistic estimate
+        Used as callback from SearchState'''
+        return self.optimistic_estimator.evaluate(selector)
+        
     @property
     def approximation_factor(self):
         '''The approximation factor to use while optimising. The result found has at least this big a score times that of the optimum.''' 

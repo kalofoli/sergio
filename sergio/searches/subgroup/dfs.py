@@ -65,7 +65,6 @@ class DepthFirstSearch(SubgroupSearch, SummarisableFromFields):
         increase_created= StatisticsUpdater('created', 1, doc='Times a search state was created.')
         increase_queued= StatisticsUpdater('queued', 1, doc='Times a predicate was queued.')
         increase_pruned= StatisticsUpdater('pruned', 1, doc='Times a predicate was pruned during refinement (and propagated to all siblings)')
-        increase_covered= StatisticsUpdater('covered', 1, doc='Number of covered nodes')
         increase_ignored= StatisticsUpdater('ignored', 1, doc='Times a predicate was ignored immediately after popping (late pruning)')
         increase_deep= StatisticsUpdater('deep', 1, doc='Number of unreachable top-nodes due to depth limit.')
         increase_measures= StatisticsUpdater('measures', 1, doc='Number of measures evaluated')
@@ -103,20 +102,28 @@ class DepthFirstSearch(SubgroupSearch, SummarisableFromFields):
                 att = np.min(oest_vals, initial='inf')
         return att
     
+    def objective_value(self, selector:Selector) -> float:
+        '''Compute objective value
+        Used as callback from SearchState'''
+        self.statistics.increase_measures()
+        return super().objective_value(selector)
+    
+    def optimistic_estimate(self, selector:Selector) -> float:
+        '''Compute optimistic estimate
+        Used as callback from SearchState'''
+        self.statistics.increase_oests()
+        return super().optimistic_estimate(selector)
+
     @property
     def max_depth(self):
         return self._max_depth
     
-    def _make_state(self, selector:Selector, depth: int, pruned:Set[int]=None, covered: Set[int]=None) -> SearchState:
+    def _make_state(self, selector:Selector, depth: int, pruned:Set[int]=None) -> SearchState:
         if pruned is None:
             pruned = set()
-        if covered is None:
-            covered = set()
-        else:  # Ensure that covered is a local copy. Next predicates to be covered should not propagate back
-            covered = covered.copy()
         self._stats.increase_created()
         return SearchState(search=self, selector=selector,
-                           depth=depth, pruned=pruned, covered=covered)
+                           depth=depth, pruned=pruned)
 
     def _run(self, root_selector: Selector=None) -> bool:
         # Initialisations
@@ -162,15 +169,6 @@ class DepthFirstSearch(SubgroupSearch, SummarisableFromFields):
         max_depth = self.max_depth
         visitor: SearchState = self._visitor
         
-        measure_property_name = self.measure.selector_property_name()
-        oest_property_name = self.optimistic_estimator.selector_property_name()
-        def update_evaluations(state):
-            if measure_property_name in state.selector.cache:
-                stats.increase_measures()
-            if oest_property_name in state.selector.cache:
-                stats.increase_oests()
-            
-                
         def create_refinement_states(state):
             nonlocal results_threshold
             refinements = refine_selector(state.selector, blacklist=state.blacklist)
@@ -184,17 +182,16 @@ class DepthFirstSearch(SubgroupSearch, SummarisableFromFields):
             for new_state in new_states:
                 selector:ConjunctionSelector = new_state.selector
                 oest:float = new_state.optimistic_estimate
-                last_predicate: int = selector.index_last_extension
                 if oest * approximation_factor <= results_threshold:  # discard and blacklist
-                    pruned.add(last_predicate)  # blacklist this predicate from all siblings
-                    stats.increase_pruned()
+                    prune_indices = set(selector.pruning_indices)
+                    pruned |= prune_indices  # blacklist this predicate from all siblings
+                    stats.increase_pruned(len(prune_indices))
                 else:
                     stats.increase_queued()
                     outcome = self.try_add_state(new_state)
                     if outcome.was_added:
                         results_threshold = results.threshold
                     valid_states.append(new_state)
-                update_evaluations(new_state)
                     
             if log_ison.progress:
                 state_cnt = Counter(s.depth for s in states)

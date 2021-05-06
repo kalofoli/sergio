@@ -122,20 +122,36 @@ def indices_slice(slicer, indices):
         raise NotImplementedError()
     return sliced_args[0] if unwrap else sliced_args
 
-def indices_remove(indices, which):
+def indices_remove(indices, which, ignore_missing=False):
     '''Remove from a sorted index set a list of indices'''
     x = np.searchsorted(indices, which)
-    if indices[x] == which:
-        return np.r_[indices[:x],indices[x+1:]]
+    if np.ndim(x)!=0 and not isinstance(indices, np.ndarray):
+        indices = np.array(indices)
+    try:
+        is_found = indices[x] == which
+    except IndexError: is_found = False
+    if not ignore_missing and not np.all(is_found):
+        if np.ndim(x):
+            pos = np.where(is_found)[0]
+            fail = np.array(which)[pos]
+            raise KeyError(f'Could not remove non-existent entries {fail} at positions {pos}.')
+        else:
+            raise KeyError(f'Could not remove non-existent entry {which}.')
     else:
-        raise KeyError(f'No index {which} in index of size {indices}')
+        return np.delete(indices, x[is_found])
     
 
 class ValidityPrincipalMatrix:
     '''Holds a tighter copy of a subset of the validities''' 
 
-    def __init__(self, predicate_validities, effective_validity, candidates):
-        candidates = np.array(candidates)
+    def __init__(self, predicate_validities, effective_validity, candidates=None, blacklist=None):
+        if candidates is None:
+            candidates = np.arange(predicate_validities.shape[1])
+        if not isinstance(candidates, np.ndarray):
+            candidates = np.array(candidates)
+        if blacklist is not None:
+            candidates = indices_remove(candidates, blacklist, ignore_missing=True)
+            
         # self._validities = np.array(predicate_validities[effective_validity, :], order='F')
         self._predicate_validities = predicate_validities
         self._effective_validity = effective_validity
