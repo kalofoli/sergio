@@ -69,15 +69,6 @@ class ClosureConjunctionSelector(ConjunctionSelector, LanguageSelector):
         tail_indices = tuple(filter(lambda x: x < index_max, self.indices))
         return tail_indices
 
-    def extend(self, predicate: PredicateOrIndexType) -> 'ClosureConjunctionSelector':
-        '''Create a new selector with an extra predicate appended to the current one
-        
-        @param greater_only: If True, only the predicates after the extension are candidates for closure search. 
-        '''
-        extension_index = self.language.predicate_index(predicate)
-        predicates = itertools.chain(self.indices, [extension_index])
-        return self.__class__(self.language, predicates)
-    
     @property
     def closure_indices(self) -> np.ndarray:
         if self._closure_indices is None:

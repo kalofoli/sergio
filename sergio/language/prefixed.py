@@ -33,7 +33,7 @@ class ClosureConjunctionSelectorPrefixed(ClosureConjunctionSelector):
         else:
             parent = None
         return parent
-        
+    
 class ClosureConjunctionLanguagePrefixed(ClosureConjunctionLanguageBase):
     '''An LCM based guaranteed tree over the closed sets.
     
@@ -88,7 +88,7 @@ class ClosureConjunctionLanguagePrefixed(ClosureConjunctionLanguageBase):
             cur_prefix_wl = sup_wl[:end_needed_wl] == sup_cur
             if np.any(cur_prefix_wl != sel_prefix_wl):
                 continue
-            refinement = selector.extend(pred) # TODO: add extra info
+            refinement = selector.extend(pred, _index_needed_end=pred+1)
             yield refinement
         
         return

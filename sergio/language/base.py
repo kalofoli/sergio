@@ -183,8 +183,12 @@ class ConjunctionSelectorBase(SummarisableAsDict, LanguageSelector[ConjunctionLa
     def refinements(self) -> Sequence['ConjunctionSelectorBase']:
         return list(self._language.refine(self))
 
-    def extend(self, predicate: PredicateOrIndexType) -> 'ConjunctionSelector':
-        '''Create a new selector with an extra predicate appended to the current one'''
+    def extend(self, predicate: PredicateOrIndexType, **kwargs) -> 'ConjunctionSelector':
+        '''Create a new selector with an extra predicate appended to the current one
+        
+        :param predicate: A single predicate with which to extend the current selector.
+        :param kwargs: Keyword arguments to pass to the constructor. 
+        '''
         raise NotImplementedError()
     
     def __contains__(self, predicate: PredicateOrIndexType) -> bool:
@@ -220,11 +224,10 @@ class ConjunctionSelectorBase(SummarisableAsDict, LanguageSelector[ConjunctionLa
 class ConjunctionSelector(ConjunctionSelectorBase):
     '''Selector taking the conjunction of a set of predicates'''
 
-    def extend(self, predicate: PredicateOrIndexType) -> 'ConjunctionSelector':
-        '''Create a new selector with an extra predicate appended to the current one'''
+    def extend(self, predicate: PredicateOrIndexType, **kwargs) -> 'ConjunctionSelector':
         extension_index = self.language.predicate_index(predicate)
         predicate_indices = chain(self.indices, [extension_index])
-        return ConjunctionSelector(self.language, predicate_indices)
+        return self.__class__(self.language, predicate_indices, **kwargs)
     
     
     class Digest(NamedTuple):  # pylint: disable = too-few-public-methods
