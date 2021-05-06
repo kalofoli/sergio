@@ -63,6 +63,24 @@ class OptimisticEstimator(Summarisable, ClassCollectionFactoryRegistrar):
     @property
     def __summary_name__(self):
         return f'oest-{self.__class__.__collection_tag__}'
+
+class OptimisticEstimatorConstant(SummarisableFromFields, OptimisticEstimator):
+    __collection_tag__ = 'constant'
+    __collection_title__ = 'Constant Value Optimistic Estimator'
+    
+    __summary_fields__ = ('value',)
+    
+    def __init__(self, value = 'inf'):
+        super().__init__()
+        self._value = float(value)
+    
+    @property
+    def value(self):
+        '''The constant value that this estimator will always yield'''
+        return self._value
+    
+    def evaluate(self, selector: Selector) -> float:
+        return self.value
     
 
 class CachingScoreMixin:
@@ -112,3 +130,4 @@ class OptimisticEstimatorCoverage(CachingScoreMixin, SummarisableFromFields, Opt
     def evaluate_uncached(self, selector: Selector) -> float:
         idl: np.ndarray = selector.validity
         return idl.mean()
+
