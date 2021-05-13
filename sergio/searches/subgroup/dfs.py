@@ -169,42 +169,6 @@ class DepthFirstSearch(SubgroupSearch, SummarisableFromFields):
         max_depth = self.max_depth
         visitor: SearchState = self._visitor
         
-        def create_refinement_states(state):
-            nonlocal results_threshold
-            refinements = refine_selector(state.selector, blacklist=state.blacklist)
-            refinements = tuple(refinements)  # dbg-remove
-            pruned:Set[int] = state.blacklist.copy()
-            #covered:Set[int] = set()
-            
-            new_states = tuple(make_state(selector=refinement, depth=state.depth+1,pruned=pruned) for refinement in refinements)
-            
-            valid_states: List[SearchState] = []
-            for new_state in new_states:
-                selector:ConjunctionSelector = new_state.selector
-                oest:float = new_state.optimistic_estimate
-                if oest * approximation_factor <= results_threshold:  # discard and blacklist
-                    prune_indices = set(selector.pruning_indices)
-                    pruned |= prune_indices  # blacklist this predicate from all siblings
-                    stats.increase_pruned(len(prune_indices))
-                else:
-                    stats.increase_queued()
-                    outcome = self.try_add_state(new_state)
-                    if outcome.was_added:
-                        results_threshold = results.threshold
-                    valid_states.append(new_state)
-                    
-            if log_ison.progress:
-                state_cnt = Counter(s.depth for s in states)
-                state_txt = ' '.join(f'{i}:{v:4}' for i, v in state_cnt.items())
-                log.progress(log.rlim.progress and f'Queue size: {len(states):6d}[{state_txt}]: Kept {len(valid_states)}/{len(new_states)} while refining {state.selector!s}[d={state.depth}]. Full state: {state!s}')
-            #if log.ison.debug:
-                #valid_selectors = set(s.selector for s in valid_states)
-                #state_txt = ','.join(map(lambda s:f'{"V" if s.selector in valid_selectors else "P"}{s}', new_states_srt))
-                #log.debug(f'Current states: {len(states):3d}. Kept {len(valid_states)}/{len(new_states)} while refining {state!s}. These are: {state_txt}')
-            visitor.state_expanded(self, state, valid_states, new_states)
-            return valid_states
-        
-        
         stop = False  # dbg-remove
         while states:
             state: SearchState = states.pop()
@@ -218,7 +182,34 @@ class DepthFirstSearch(SubgroupSearch, SummarisableFromFields):
                 if stop:  # dbg-remove
                     raise KeyboardInterrupt()  # dbg-remove
                 
-                new_states = create_refinement_states(state)
+                '# Create refinement states'
+                refinements = refine_selector(state.selector, blacklist=state.blacklist)
+                refinements = tuple(refinements)  # dbg-remove
+                pruned:Set[int] = state.blacklist.copy()
+                
+                refinement_states = tuple(make_state(selector=refinement, depth=state.depth+1,pruned=pruned) for refinement in refinements)
+                
+                new_states: List[SearchState] = []
+                for refinement_state in refinement_states:
+                    selector:ConjunctionSelector = refinement_state.selector
+                    oest:float = refinement_state.optimistic_estimate
+                    if oest * approximation_factor <= results_threshold:  # discard and blacklist
+                        prune_indices = set(selector.pruning_indices)
+                        pruned |= prune_indices  # blacklist this predicate from all siblings
+                        stats.increase_pruned(len(prune_indices))
+                    else:
+                        stats.increase_queued()
+                        outcome = self.try_add_state(refinement_state)
+                        if outcome.was_added:
+                            results_threshold = results.threshold
+                        new_states.append(refinement_state)
+                        
+                if log_ison.progress:
+                    state_cnt = Counter(s.depth for s in states)
+                    state_txt = ' '.join(f'{i}:{v:4}' for i, v in state_cnt.items())
+                    log.progress(log.rlim.progress and f'Queue size: {len(states):6d}[{state_txt}]: Kept {len(new_states)}/{len(refinement_states)} while refining {state.selector!s}[d={state.depth}]. Full state: {state!s}')
+                visitor.state_expanded(self, state, new_states, refinement_states)
+                
                 if new_states and state.depth + 1 < max_depth:
                     new_states_srt = sorted(new_states, key=self.state_scoring.product)
                     states += new_states_srt[::-1]
