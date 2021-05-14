@@ -13,7 +13,8 @@ from pandas import DataFrame
 import numpy as np
 
 from colito.logging import getModuleLogger, to_stuple
-from colito.summaries import SummaryOptions, SummarisableList, SummarisableFromFields
+from colito.summaries import SummaryOptions, SummarisableList, SummarisableFromFields,\
+    JSONConvertingVisitor
 from colito.runtime import RuntimeEnvironment
 from colito.factory import DEFAULT_TYPE_RESOLVER
 
@@ -458,6 +459,7 @@ class Computation(SummarisableFromFields, Cloneable):
             log.progress(f'Computing experiment summary with {len(self.subgroups)} {results_text}.')
         summariser = NamedSummariser()
         summariser.add_visitor(SelectorSummariser(scores))
+        summariser.add_visitor(JSONConvertingVisitor())
         summary = summariser(self)
         import json
         jsonstr = json.dumps(summary, indent=indent, separators=separators)

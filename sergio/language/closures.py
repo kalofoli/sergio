@@ -99,7 +99,6 @@ class ClosureConjunctionSelector(ConjunctionSelector, LanguageSelector):
     
     def __summary_dict__(self,options:SummaryOptions):
         dct = super().__summary_dict__(options)
-        dct['path_description'] = self.path_description
         #if options.parts & SummaryParts.PREDICATE_INDICES:
         #    dct['path_indices'] = self.indices_path
         #    dct['compact_indices'] = self.indices_compact

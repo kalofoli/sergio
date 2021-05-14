@@ -73,7 +73,7 @@ class MeasureMaximumMeanDeviation(MaximumMeanDeviationScoreMixin, Measure):
     __collection_title__ = 'Maximum Mean Deviation'
     __collection_tag__ = "mmd"
     __summary_fields__ = SummaryFieldsAppend(('rank',))
-    
+    __summary_conversions__ = {'comparison':str}
     
     def __init__(self, gramian, comparison:ComparisonMode, rank=0):
         super().__init__(gramian, comparison)
@@ -123,6 +123,7 @@ class OptimisticEstimatorMaximumMeanDeviationSingleDirection(MaximumMeanDeviatio
     '''
     __collection_title__ = 'Maximum Mean Deviation using a single direction bound'
     __collection_tag__ = "mmd-sd"
+    __summary_conversions__ = {'comparison':str}
     
     def __init__(self, gramian, comparison:ComparisonMode, max_rank:int=None):
         super().__init__(gramian, comparison)

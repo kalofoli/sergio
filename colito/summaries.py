@@ -9,6 +9,7 @@ import typing
 
 from colito.resolvers import make_enum_resolver
 from colito.logging import getModuleLogger
+import warnings
 
 log = getModuleLogger(__name__)
 
@@ -229,6 +230,24 @@ class SummaryState:
         sval = f'"{s:.17}"...' if len(s)>20 else f'"{s}"'
         sname = f'{self.key}=' if self.key is not None else f'{self.name}=' if self.name is not None else ""
         return f'<State[{"S" if self.must_summarise else "s"}@{self.depth}]{sname}{sval}>'
+    @property
+    def path(self):
+        path = []
+        parent = self
+        while True:
+            name = parent.key if parent.key is not None else parent.name
+            path.append(name)
+            parent = parent.parent
+            if parent is None:
+                break
+            if isinstance(parent.value, dict):
+                path[-1] = f'.{path[-1]}'
+            elif isinstance(parent.value, list):
+                path[-1] = f'[{path[-1]}]'
+            else:
+                raise TypeError(f'Unknown parent value type {type(parent.value).__name__}')
+        spath = ''.join(path[::-1]) 
+        return spath
 
 class SummaryVisitor:
     def on_start(self, state:SummaryState, actions): pass
@@ -371,6 +390,60 @@ class Summariser:
                     raise SummaryError(f'While performing action {action}.') from e
                     
         return res
+
+class ConvertingVisitorBase(SummaryVisitor):
+    def on_assemble(self, state:SummaryState, actions):
+        if isinstance(state.value, dict):
+            for key,value in state.value.items():
+                self.process_entry(state, key, value)
+        elif isinstance(state.value, list):
+            for key, value in enumerate(state.value):
+                self.process_entry(state, key, value)
+        
+    def process_entry(self, state, key, value):
+        pass
+
+class ConvertListedVisitorMixin(SummaryVisitor):
+    
+    def __init__(self, *args, converters:typing.Dict[type, typing.Callable], **kwargs):
+        self._converters = converters
+        self._classes = tuple(converters.keys())
+        super().__init__(*args, **kwargs)
+                
+    def process_entry(self, state, key, value):
+        super().process_entry(state, key, value)
+        if isinstance(value, self._classes):
+            for cls, conv in self._converters.items():
+                if isinstance(value, cls):
+                    res = conv(value)
+                    state.value[key] = res
+                    break
+
+
+class ConvertDisallowedlowedVisitorMixin(SummaryVisitor):
+    def __init__(self, *args, allowed_types: typing.Sequence[type], **kwargs):
+        self._allowed_types = tuple(allowed_types)
+        super().__init__(*args, **kwargs)
+    
+    def process_entry(self, state, key, value):
+        super().process_entry(state, key, value)
+        if not isinstance(value, self._allowed_types):
+            self.convert_disallowed(state, key, value)
+
+    def convert_disallowed(self, state, key, value):
+        state.value[key] = str(value)
+    
+
+class JSONDisallowedTypeWarning(Warning): pass
+class JSONConvertingVisitor(ConvertDisallowedlowedVisitorMixin, ConvertingVisitorBase):
+    __allowed_types__ = [dict, str, list, int, float, tuple, type(None)]
+    def __init__(self, warn=True):
+        super().__init__(allowed_types=self.__allowed_types__)
+        self._warn = True
+    def convert_disallowed(self, state, key, value):
+        super().convert_disallowed(state, key, value)
+        if self._warn:
+            warnings.warn(JSONDisallowedTypeWarning(f'Disallowed type {type(value).__name__} at {key} of {state} at {state.path}'))
 
 class NamingVisitor(SummaryVisitor):
     """ A visitor that provides names to the objects in the summary.

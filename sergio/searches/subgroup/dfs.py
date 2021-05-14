@@ -18,7 +18,7 @@ from .base import SubgroupSearch, SearchVisitor, SearchState, AddResultOutcome
 from .utils import ScoringFunctions
 
 from colito.summaries import summary_from_fields, SummaryOptions, SummarisableList, SummarisableAsDict,\
-    SummarisableFromFields, SummaryFieldsAppend
+    SummarisableFromFields, SummaryFieldsAppend, SummaryConversionsAppend
 from colito.queues import Entry
 from colito.factory import ProductBundle
 from colito.statistics import StatisticsBase, StatisticsUpdater
@@ -228,7 +228,7 @@ DepthSpec = Union[float, int, Iterable[int]]
 class IterativeDeepening(SubgroupSearch, SummarisableFromFields):
     __collection_tag__ = 'iterative-deepening'
     __summary_fields__ = SummaryFieldsAppend(('statistics','state_scoring','steps','depths'))
-    __summary_conversions__ = {'depths':str,'steps':SummarisableList}
+    __summary_conversions__ = SummaryConversionsAppend({'depths':str,'steps':SummarisableList})
     
     def __init__(self, language: ConjunctionLanguage,
                  measure: Measure, optimistic_estimator: OptimisticEstimator, k:int=1, max_best:bool=True,

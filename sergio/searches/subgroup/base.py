@@ -135,7 +135,7 @@ class SubgroupSearch(SummarisableFromFields,ClassCollectionFactoryRegistrar):
     __collection_factory__ = SUBGROUP_SEARCHES
 
     __summary_fields__ = ['subgroups','approximation_factor','k','language','measure','optimistic_estimator', 'time_elapsed', 'time_started', 'status']
-    __summary_convert__ = {'subgroups': SummarisableList}
+    __summary_conversions__ = {'subgroups': SummarisableList, 'status':str}
 
     def __init__(self, language:ConjunctionLanguage, measure:Measure, optimistic_estimator:OptimisticEstimator, k:int=1, max_best:bool=True, approximation_factor:float=1.) -> None:
         self._language:ConjunctionLanguage = language
