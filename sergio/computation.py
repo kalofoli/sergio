@@ -28,11 +28,12 @@ from sergio import FileManager
 from sergio.data.factory import DatasetFactory
 from colito.cache import DEFAULT_FILE_CACHE, PersistentCache
 from sergio.kernels import Kernel
-from sergio.kernels.gramian import GramianFromDataset
+from sergio.kernels.gramian import GramianFromDataset, Gramian
 from sergio.data.bundles.entities import EntityAttributes
 from colito import NamedUniqueConstant
 from collections import namedtuple
 from sergio.summaries import SelectorSummariser
+from colito.cloning import Cloneable
 
 log = getModuleLogger(__name__) #pylint: disable=invalid-name
 
@@ -52,24 +53,62 @@ def rename_columns(df, reg, txt,regexp=False, inplace=False):
 DataFrame.rename_columns = rename_columns
 #TODO: Monkey patching is UGLY. Move to a better place.
 
+'## Decorators'
+def default_setter(prop, cls, name=None, allow_none=True):
+    name = f'{prop.fget.__name__}' if name is None else name
+    @prop.setter
+    def prop_setter(self, what):
+        if (allow_none and what is None) or isinstance(what, cls):
+            setattr(self, '_'+name, what)
+        else:
+            raise TypeError(f'Could not set property {name!r} from {what} of type {type(what).__name__} which is not of type {cls.__name__}.')
+    return prop_setter
+
+def class_setter(prop, cls, accepted_classes, name=None, store_retval=True, allow_none=True):
+    name = f'{prop.fget.__name__}' if name is None else name
+    accepted_classes = tuple(accepted_classes)
+    def decorator(fn):
+        def prop_setter(self, what):
+            if isinstance(what, accepted_classes):
+                val = fn(self, what)
+                if store_retval:
+                    setattr(self, '_'+name, val)
+            elif (allow_none and what is None) or isinstance(what, cls):
+                setattr(self, '_'+name, what)
+            else:
+                scls = ','.join([c.__name__ for c in accepted_classes])
+                raise TypeError((f'Could not set property {name!r} from {what} of type {type(what).__name__}. '
+                                 f'Either specify an object of type {cls.__name__} or any of [{scls}] which will be converted into the former.'))
+        prop_setter.__name__ = name
+        return prop.setter(prop_setter)
+    return decorator
+
+
 OptimisationResult = namedtuple('OptimisationResult' ,('result_history', 'subgroups', 'search'))
-class Computation(SummarisableFromFields):
+class Computation(SummarisableFromFields, Cloneable):
     SCORE_CONFIGS = ['AverageCoreness']
     __summary_fields__ = ('tag', 'runtime_environment', 'dataset', 'language', 'measure',
                           'optimistic_estimator', 'search', 'subgroups')
     
     __summary_conversions__ = {'subgroups': SummarisableList}
 
-    def __init__(self, tag=None, log=log, file_manager = None, cache = DEFAULT_FILE_CACHE):
+    def __init__(self, tag=None, log=log, file_manager = None, cache = DEFAULT_FILE_CACHE,
+                 prediciser = None, dataset = None, language = None, oest = None, measure = None, gramian = None):
         self._file_manager: FileManager = file_manager if file_manager is not None else FileManager()
         self._cache: PersistentCache = cache
         self._runtime_environment = RuntimeEnvironment()
         self._dataset = None
+        self.dataset = dataset
         self._prediciser = None
+        self.prediciser = prediciser
         self._language = None
+        self.language = language
         self._oest = None
+        self.oest = oest
         self._measure = None
+        self.measure = measure
         self._gramian = None
+        self.gramian = gramian
         self._kernel = None
         self._tag = tag if tag is not None else str(datetime.timestamp(datetime.now()))
         self._result = OptimisationResult(None, None, None)
@@ -97,25 +136,29 @@ class Computation(SummarisableFromFields):
     @property
     def dataset(self):
         return self._dataset
-    @dataset.setter
-    def dataset(self, value):
-        if isinstance(value, str):
-            self.load_dataset(value)
-        elif isinstance(value, EntityAttributes):
-            self._dataset = value
-        else:
-            raise TypeError(f'Cannot set dataset from {value} of type {type(value).__name__}.')
+    @class_setter(dataset, cls=EntityAttributes, accepted_classes=[str], store_retval=False)
+    def dataset(self, value):  # pylint: disable=function-redefined
+        self.load_dataset(value)
 
     @property
     def prediciser(self) -> Prediciser:
         return self._prediciser
+    @class_setter(prediciser, cls=Prediciser, accepted_classes=[str], store_retval=False)
+    def prediciser(self, what): # pylint: disable=function-redefined
+        if not what: 
+            self.load_prediciser()
+        else:
+            cuts, ranges, negate = what.split(':')
+            cuts = int(cuts)
+            self.load_prediciser(cuts, ranges, negate)
+    
     
     @property
     def language(self) -> Language:
         return self._language
-    @language.setter
-    def language(self, name):
-        self.load_language(name)
+    @class_setter(language, cls=Language, accepted_classes=[str], store_retval=False)
+    def language(self, what): # pylint: disable=function-redefined
+        self.load_language(what)
 
     @property
     def tag(self):
@@ -133,36 +176,34 @@ class Computation(SummarisableFromFields):
     @property
     def search(self):
         '''The search algorithm used'''
-        return self._result.search
+        return self._result.search if self._result is not None else None
     
     @property
     def subgroups(self):
-        return self._result.subgroups
+        return self._result.subgroups if self._result is not None else None
     
     @property
-    def measure(self):
+    def measure(self) -> Measure:
         return self._measure
+    measure = default_setter(measure, cls=Measure)
     
     @property
-    def optimistic_estimator(self):
+    def optimistic_estimator(self) -> OptimisticEstimator:
         return self._oest
+    optimistic_estimator = default_setter(optimistic_estimator, cls=OptimisticEstimator)
     
     @property
-    def kernel(self):
+    def kernel(self) -> Kernel:
         return self._kernel
+    kernel = default_setter(kernel, cls=Kernel)
     
     @property
-    def gramian(self):
+    def gramian(self) -> Gramian:
         return self._gramian
-    @gramian.setter
-    def gramian(self, what):
-        from sergio.kernels.gramian import Gramian, GramianFromArray
-        if isinstance(what, Gramian):
-            self._gramian = what
-        elif isinstance(what, np.ndarray):
-            self._gramian = GramianFromArray(what)
-        else:
-            raise ValueError(f'Cannot create Gramian from {what} of type {type(what).__name__}')
+    @class_setter(gramian, cls=Gramian, accepted_classes=[np.ndarray], store_retval=True)
+    def gramian(self, what): # pylint: disable=function-redefined
+        from sergio.kernels.gramian import GramianFromArray
+        return GramianFromArray(what)
 
     @property
     def resume(self):
@@ -433,6 +474,7 @@ class Computation(SummarisableFromFields):
             .rename_columns('([A-Z])([a-z0-9]+)',lambda m:f'_{m[1].lower()}{m[2]}',regexp=True)
         return df
 
+    
 #     def subgroups_to_csv(self, separator=None, float_format='%.5f', header=True, index=False, parts=SummaryParts.BASIC, **kwargs):
 #         df = self.subgroups_to_dataframe(parts=parts)
 #         result = df.to_csv(sep=separator, float_format=float_format, index=index, header=header, **kwargs)
@@ -444,4 +486,6 @@ class Computation(SummarisableFromFields):
 if __name__ == "__main__":
     import doctest
     doctest.testmod() 
+    
+    
     

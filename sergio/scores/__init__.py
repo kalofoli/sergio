@@ -28,13 +28,14 @@ from colito.collection import ClassCollectionRegistrar
 
 from sergio.language import Selector
 from sergio.data import EntityAttributes
+from colito.cloning import Cloneable
 
 
 MEASURES = ClassCollection('Measures')
 OPTIMISTIC_ESTIMATORS = ClassCollection('OptimisticEstimators')
 
 
-class Measure(Summarisable, ClassCollectionFactoryRegistrar):
+class Measure(Summarisable, Cloneable, ClassCollectionFactoryRegistrar):
     '''Abstract measure class'''
     __collection_tag__ = None
     __collection_factory__ = MEASURES
@@ -51,7 +52,7 @@ class Measure(Summarisable, ClassCollectionFactoryRegistrar):
     def from_kwargs(cls, **kwargs):
         super().__init__()
 
-class OptimisticEstimator(Summarisable, ClassCollectionFactoryRegistrar):
+class OptimisticEstimator(Summarisable, Cloneable, ClassCollectionFactoryRegistrar):
     '''Abstract Optimistic Estimator class'''
     __collection_tag__ = None
     __collection_factory__ = OPTIMISTIC_ESTIMATORS

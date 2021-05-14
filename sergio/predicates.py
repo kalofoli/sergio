@@ -19,6 +19,7 @@ from sergio.attributes import AttributeKind, AttributeInfo as Attribute, Attribu
     AttributeBoolean
 from sergio.discretisers import Discretiser, Interval, DEFAULT_DISCRETISER
 from colito.resolvers import make_enum_resolver
+from colito.cloning import Cloneable
 
 
 EntityIndexType = Union[slice, np.ndarray, Sequence[int]]
@@ -299,7 +300,7 @@ class PredicateBoolean(AttributePredicate):
     summary_name = 'predicate-boolean'
 
 
-class Prediciser(SummarisableAsDict):
+class Prediciser(SummarisableAsDict, Cloneable):
     
     def __init__(self, discretiser: Discretiser=None, negate:PredicateKinds=PredicateKinds.ALL) -> None:
         self._discretiser: Discretiser = DEFAULT_DISCRETISER if discretiser is None else discretiser

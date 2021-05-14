@@ -14,6 +14,7 @@ import colito.matlab as mtl
 
 from colito.summaries import SummaryOptions, SummarisableAsDict
 from colito.resolvers import make_enum_resolver
+from colito.cloning import Cloneable
 
 class Minimisers:
     class IntResult(NamedTuple):
@@ -101,7 +102,7 @@ class DiscretiserRanges(enum.Flag):
 
 DISCRETISER_RANGE_RESOLVER = make_enum_resolver(DiscretiserRanges, allow_multiple=True, collapse_multipart=True)
 
-class Discretiser(SummarisableAsDict):
+class Discretiser(SummarisableAsDict, Cloneable):
     
     
     default_names = {
