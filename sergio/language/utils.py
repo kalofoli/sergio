@@ -241,7 +241,9 @@ class EffectiveValiditiesTracker:
     def __init__(self, predicate_validities, effective_validity):
         # self._validities = np.array(predicate_validities[effective_validity, :], order='F')
         self._validities = predicate_validities[effective_validity, :]
-        self._supports = self._validities.sum(axis=0)
+        self._supports = None
+        self._anys = None
+        self._alls = None
 
     @property
     def validities(self):
@@ -259,29 +261,48 @@ class EffectiveValiditiesTracker:
     
     @property
     def supports(self):
+        if self._supports is None:
+            self._supports = self._validities.sum(axis=0)
         return self._supports
+    @property
+    def anys(self):
+        if self._anys is None:
+            self._anys = self._validities.any(axis=0)
+        return self._anys
+    @property
+    def alls(self):
+        if self._alls is None:
+            self._alls = self._validities.all(axis=0)
+        return self._alls
 
     def supports_of(self, ev, predicates):
         # cythonise?
-        return self._validities[np.ix_(ev, predicates)].sum(axis=0)
+        return self._validities[ev,:][:, predicates].sum(axis=0)
 
     def intersection_support_of(self, predicate, predicates):
         ev = self.validities[:,predicate]
         return self.supports_of(ev, predicates)
+
+    def intersection_all_of(self, predicate:int, predicates:np.ndarray):
+        '''Perform an 'all' on the intersection of predicate and predicates
+        
+        :param predicate: integer column index of the predicate defining the "cover" of rows to consider in the operation'''
+        ev = self.validities[:,predicate]
+        return self.all_of(ev, predicates)
     
-    def validity_of(self, ev, predicate):
+    def validity_of(self, cover, predicate):
         # cythonise?
         if isinstance(predicate, Iterable):
-            index = np.ix_(ev, predicate)
+            index = np.ix_(cover, predicate)
         else:
-            index = (ev, predicate)
+            index = (cover, predicate)
         return self._validities[index]
 
-    def all(self, cover, predicates):
-        return self._validities[np.ix_(cover, predicates)].all(axis=0)
+    def all_of(self, cover, predicates):
+        return self._validities[cover,:][:, predicates].all(axis=0)
 
-    def any(self, cover, predicates):
-        return self._validities[np.ix_(cover, predicates)].any(axis=0)
+    def any_of(self, cover, predicates):
+        return self._validities[cover,:][:, predicates].any(axis=0)
 
     
 class EffectiveValiditiesView:

@@ -55,41 +55,40 @@ class ClosureConjunctionLanguagePrefixed(ClosureConjunctionLanguageBase):
         
         sup_sel = selector.validity.sum()
         num_predicates = len(self.predicates)
-        
+    
         evt = EffectiveValiditiesTracker(self.predicate_validities, selector.validity)
-
+    
         idl_whitelist = np.ones(num_predicates, bool)
         if blacklist is not None:
             idx_blacklist = np.fromiter(self.predicate_indices(blacklist),int)
             idl_whitelist[idx_blacklist] = False
         else:
             idx_blacklist = np.zeros(0, int)
-        
-        is_superset_prd = evt.supports == sup_sel
+    
+        is_superset_prd = evt.alls
         if np.any(is_superset_prd[idx_blacklist]):
             return
-        
+    
         'Remove non-consequential'
-        idl_whitelist[evt.supports == 0] = False
-        idl_whitelist[evt.supports == sup_sel] = False
-        
+        idl_whitelist[is_superset_prd] = False
+        idl_whitelist[~evt.anys] = False
+    
         idx_whitelist = np.arange(num_predicates)[idl_whitelist]
-        
+    
         end_needed_pr = selector.index_needed_end
         end_needed_wl = np.searchsorted(idx_whitelist, end_needed_pr)
         sel_prefix_wl = is_superset_prd[idx_whitelist[:end_needed_wl]]
-        
+    
         for cand, pred in enumerate(idx_whitelist):
             sup_cur = evt.supports[pred]
-            sup_bl = evt.intersection_support_of(pred, idx_blacklist)
-            if np.max(sup_bl, initial=-1) == sup_cur:
+            idl_all = evt.intersection_all_of(pred, idx_blacklist)
+            if np.any(idl_all):
                 continue
-            sup_wl = evt.intersection_support_of(pred, idx_whitelist)
-            cur_prefix_wl = sup_wl[:end_needed_wl] == sup_cur
+            cur_prefix_wl = evt.intersection_all_of(pred, idx_whitelist[:end_needed_wl])
             if np.any(cur_prefix_wl != sel_prefix_wl):
                 continue
             refinement = selector.extend(pred, _index_needed_end=pred+1)
             yield refinement
-        
+    
         return
 
