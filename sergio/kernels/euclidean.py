@@ -66,9 +66,12 @@ class EuclideanKernel(Kernel):
     
     def transform(self, Y):
         X = self._X
-        nx, ny = len(X), len(Y)
-        daX, daY = DimensionArray(X, ny, 0), DimensionArray(Y, nx, 1)
-        return self.from_dimensions(daX, daY)
+        ## Faster method for this case
+        #nx, ny = len(X), len(Y)
+        #daX, daY = DimensionArray(X, ny, 0), DimensionArray(Y, nx, 1)
+        #return self.from_dimensions(daX, daY)
+        
+        return X@Y.T
 
 class LinearKernel(EuclideanKernel):
     """
