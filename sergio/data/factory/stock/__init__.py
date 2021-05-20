@@ -335,6 +335,8 @@ def lopass_df(df, cutoff, order):
     
     return pd.DataFrame({df.columns[0]:list(Y)}, index=df.index)
 
+
+
 class RocketKernel:
     def __init__(self, num_features=3200, normalise=True, gamma=1, lopass=None, random_state=0):
         from sktime.transformations.panel.rocket import MiniRocket
@@ -355,14 +357,7 @@ class RocketKernel:
     def transform(self, Y):
         Y = self.preprocess(Y)
         F = self._trans.transform(Y).values
-        if self._alpha is None:
-            self._alpha = np.ones(F.shape[1])
-        K = rbf_kernel(F, gamma=self._gamma)
-        #K = F@np.diag(self._alpha)@F.T
-        if self._normalise:
-            d = np.diag(K)**-.5
-            K = K*(d[:,None]*d[None,:])
-        return K
+        return F
     def fit_transform(self, X, Y=None):
         if Y is None:
             Y = X
