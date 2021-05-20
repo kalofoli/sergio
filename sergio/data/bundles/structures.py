@@ -14,7 +14,9 @@ from sergio.attributes import AttributeKind
 
 
 
-class EntityStructure: pass
+class EntityStructure:
+   # __slots__ = ()
+   pass
 
 class EntityAttributesWithStructures(EntityAttributes):
     __target_name__ = 'structures'
@@ -22,7 +24,7 @@ class EntityAttributesWithStructures(EntityAttributes):
                  attribute_info={None:None}, attribute_selection={None:1}) -> None:
         super().__init__(attribute_data = attribute_data, name = name,
                  attribute_info=attribute_info, attribute_selection=attribute_selection)
-        
+
         self._structures = structures
 
     @property
@@ -30,7 +32,7 @@ class EntityAttributesWithStructures(EntityAttributes):
     @property
     def target_name(self): return self.__target_name__
     target_data = structures
-    
+
 class EntityAttributesWithGraphs(EntityAttributesWithStructures):
     '''
     >>> from sergio.data.factory.morris import MorrisLoader
@@ -53,19 +55,19 @@ class EntityAttributesWithGraphs(EntityAttributesWithStructures):
     True
     '''
     __target_name__ = 'graphs'
-    
+
     @classmethod
     def from_morris(cls, name, data, target, with_oidx:bool=False, directed:bool=False):
         '''
         :param with_oidx: Append to the edge properties (if existing) the original edge index.
-        :param directed: Specify if the graphs should be considered directed. If None, they are directed if reverse edges are detected. 
+        :param directed: Specify if the graphs should be considered directed. If None, they are directed if reverse edges are detected.
         '''
         structures = [Graph.from_morris(*entry, with_orig_idx=with_oidx, directed=directed)
                       for entry in data]
         df_attr = pd.DataFrame({'target':target})
         ea = cls(structures=structures, name=name, attribute_data = df_attr)
         return ea
-    
+
     class _Slicer:
         def __init__(self, ea):
             self._ea = ea
@@ -75,7 +77,7 @@ class EntityAttributesWithGraphs(EntityAttributesWithStructures):
             attr_info = ea.attribute_info
             attr_sel = ea.attribute_selection
             idx = df_attrs.index
-            
+
             if 'orig_idx' not in df_attrs.columns:
                 df_attrs['orig_idx'] = idx
                 attr_info = attr_info + [AttributeKind.INDEX]
@@ -87,10 +89,10 @@ class EntityAttributesWithGraphs(EntityAttributesWithStructures):
             return ea_sl
     @property
     def slice(self): return self._Slicer(self)
-        
+
 
 class Graph(EntityStructure):
-    __slots__ = ('edges','vp','ep','directed', 'num_vertices')
+    #__slots__ = ('edges','vp','ep','directed', 'num_vertices')
     def __init__(self, edges, directed, vp=None, ep=None, num_vertices=None):
         import numpy as np
         self.edges = np.array(edges)
@@ -152,7 +154,7 @@ class Graph(EntityStructure):
         for eprop in ep:
             g.es[eprop] = self.ep[eprop].values
         return g
-        
+
 
 if __name__ == '__main__':
     import doctest
