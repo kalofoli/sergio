@@ -104,7 +104,8 @@ class WassersteinWeissfeilerLehmanKernel(PreprocessMixin, Kernel):
         return res[0,1]
 
 
-from sergio.kernels.details.wwl.wwl import WeisfeilerLehman, ContinuousWeisfeilerLehman, _compute_wasserstein_distance, laplacian_kernel
+from sergio.kernels.details.wwl.src.wwl import WeisfeilerLehman, ContinuousWeisfeilerLehman
+from sergio.kernels.details.wwl.src.wwl.wwl import _compute_wasserstein_distance, laplacian_kernel
 def pairwise_wasserstein_distance(X, node_features = None, num_iterations=3, sinkhorn=False, enforce_continuous=False, verbose=False):
     """
     Pairwise computation of the Wasserstein distance between embeddings of the 
