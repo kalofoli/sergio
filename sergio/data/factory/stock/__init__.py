@@ -15,6 +15,8 @@ import pandas as pd
 from colito.logging import getModuleLogger
 log = getModuleLogger(__name__)
 
+from sklearn.metrics.pairwise import rbf_kernel
+
 def command(command, v=3, parts = [], prep=None, args=[], kwargs={}):
     base_url = f'https://financialmodelingprep.com/api/v{v}/{command}'
     def decorator(fn):
@@ -320,3 +322,50 @@ class StocksLoader:
         from sergio.data.bundles import EntityAttributesWithStructures
         eas = EntityAttributesWithStructures(attribute_data=df, name=f'stock-{tag}', structures=df_structs)
         return eas    
+
+def lopass(data, cutoff, order):
+    # Get the filter coefficients 
+    from scipy.signal import butter,filtfilt
+    b, a = butter(order, cutoff, btype='low', analog=False)
+    y = filtfilt(b, a, data)
+    return y
+def lopass_df(df, cutoff, order):
+    X = np.vstack(df.iloc[:,0].values)
+    Y = lopass(X, cutoff=cutoff, order=order)
+    
+    return pd.DataFrame({df.columns[0]:list(Y)}, index=df.index)
+
+class RocketKernel:
+    def __init__(self, num_features=3200, normalise=True, gamma=1, lopass=None, random_state=0):
+        from sktime.transformations.panel.rocket import MiniRocket
+        self._trans = MiniRocket(num_features=num_features, random_state=random_state)
+        self._alpha = None
+        self._normalise = normalise
+        self._gamma = gamma
+        self._lopass = lopass
+    def preprocess(self, X):
+        if self._lopass is not None:
+            X = lopass_df(X, **self._lopass)
+        return X
+    
+    def fit(self, X):
+        self._X = self.preprocess(X)
+        self._trans.fit(X)
+        return self
+    def transform(self, Y):
+        Y = self.preprocess(Y)
+        F = self._trans.transform(Y).values
+        if self._alpha is None:
+            self._alpha = np.ones(F.shape[1])
+        K = rbf_kernel(F, gamma=self._gamma)
+        #K = F@np.diag(self._alpha)@F.T
+        if self._normalise:
+            d = np.diag(K)**-.5
+            K = K*(d[:,None]*d[None,:])
+        return K
+    def fit_transform(self, X, Y=None):
+        if Y is None:
+            Y = X
+        self.fit(X)
+        return self.transform(Y)
+    
