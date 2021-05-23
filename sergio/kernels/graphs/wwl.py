@@ -33,7 +33,8 @@ class WassersteinWeissfeilerLehmanKernel(PreprocessMixin, Kernel):
     __collection_title__ = 'Wasserstein Weissfeiler-Lehman Kernel'
     __collection_tag__ = 'wwl'
     
-    _summary_convert = {'gamma':float, 'num_iterations':int}
+    __summary_conversions__ = {'gamma':float, 'num_iterations':int}
+    __kernel_params__ = ('gamma','num_iterations','use_labels')
     
     def __init__(self, gamma:float=1., num_iterations:int=3, use_sinkhorn:bool=False, use_labels:bool=True, label_source:WWLLabelSource=WWLLabelSource.DATA_ELSE_CORENESS, verbose:bool=False):
         super().__init__()
