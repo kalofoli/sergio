@@ -353,6 +353,36 @@ class ValueCache(dict):
 
         return property(wrapped_getter) 
 
+def cache_to_disk(cache_dir, fmt=None):
+    '''A decorator that caches the value of this function to disk'''
+    def decorator(fn):
+        import inspect
+        from functools import wraps
+        sig = inspect.signature(fn)
+        nonlocal fmt
+        if fmt is None:
+            spars = ','.join(f'{p}={{{p}!r}}' for p in sig.parameters)
+            fmt = f'{fn.__name__}({spars}).pickle'
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            pars = sig.bind(*args, **kwargs)
+            pars.apply_defaults()
+            args = pars.arguments
+            fname = os.path.join(cache_dir, fmt.format(**args))
+            try:
+                with open(fname, 'rb') as fid:
+                    data = pickle.load(fid)
+                    return data
+            except FileNotFoundError:
+                pass
+            except Exception:
+                raise
+            data = fn(**args)
+            with open(fname, 'wb') as fid:
+                pickle.dump(data, fid)
+            return data
+        return wrapper
+    return decorator
 
 
 
