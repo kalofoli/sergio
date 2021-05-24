@@ -162,47 +162,44 @@ class GD:
         self._r = r
     
     
-    def __call__(self, p=None, c_0=.1, maxit=1000, a=.01, tol=1e-5, eta=1e-3):
+    def __call__(self, p=None, mu_0=.1, maxit=1000, a=.01, tol=1e-5, eta=1e-3):
         r = self._r
         if p is None:
             p = np.zeros(r.k-1)
-        c = c_0
+        mu = mu_0*np.ones(r.n) if np.ndim(mu_0)==0 else mu_0
         iters = 0
         x = r.rotate(p)
+        steps = 0
         while iters < maxit:
             g_v = r.value_sdiff(p)
             y = x[x<0].sum()
-            g_c = r.inner_sdiff(p, x<0)
+            g_c = r.inner_sdiff(p, mu*(x<0))
             
-            g = g_v + c*g_c
-            p_nxt = p + eta*g
+            g = g_v + g_c
+            p_nxt = p + eta*g/(steps+1)**.5
             x_nxt = r.rotate(p_nxt)
-            y_nxt = x_nxt[x<0].sum()
-            if y_nxt<y:
-                c_nxt = c*(1+a)
-                #print(f'{iters:4d}: Inc y: {y}->{y_nxt} and new c: {c}')
-            elif y_nxt==0:
-                #break
-                #print(f'{iters:4d}: Dec y: {y}->{y_nxt} and new c: {c}')
-                c_nxt = c/(1+a)
-                eta_nxt = eta/(1+a)
-            else:
-                c_nxt = c
-                eta_nxt = eta
+            mu_nxt = mu
             if np.linalg.norm(x-x_nxt)<tol:
-                break
-            self.updated(x,x_nxt,p,p_nxt, c, c_nxt, eta, eta_nxt)
+                print('Converged')
+                idl_neg = x<0
+                if np.any(idl_neg):
+                    mu_nxt[idl_neg] = mu[idl_neg]*(1+a)
+                    print(f'{iters:4d}: Inc y: {y} and new mu: {mu_nxt}')
+                    steps = 0
+                else:
+                    break
+            self.updated(x,x_nxt,p,p_nxt, mu, mu_nxt)
             x = x_nxt
             p = p_nxt
-            c = c_nxt
-            eta = eta_nxt
+            mu = mu_nxt
             iters += 1
+            steps += 1
         return x
-    def updated(self, x, x_nxt, p, p_nxt, c, c_nxt, eta, eta_nxt):
+    def updated(self, x, x_nxt, p, p_nxt, mu, mu_nxt):
         pass
 import functools
 from collections import namedtuple
-Step = namedtuple('Step',('v','phis','c'))
+Step = namedtuple('Step',('x','phis','mu'))
 class TrackingGD(GD):
     def __init__(self, r):
         super().__init__(r=r)
@@ -211,9 +208,10 @@ class TrackingGD(GD):
     def __call__(self, *args, **kwargs):
         self._results.clear()
         return super().__call__(*args, **kwargs)
-    def updated(self, x, x_nxt, p, p_nxt, c, c_nxt, eta, eta_nxt):
-        s = Step(v=self._r(x_nxt), phis=p_nxt, c = c_nxt)
+    def updated(self, x, x_nxt, p, p_nxt, mu, mu_nxt):
+        s = Step(x=self._r(x_nxt), phis=p_nxt, mu = np.array(mu_nxt))
         self._results.append(s)
+
     
 if __name__ == '__main__':
     import doctest

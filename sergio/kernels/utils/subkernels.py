@@ -11,6 +11,13 @@ import numpy as np
 from tqdm import tqdm
 import joblib
 
+import warnings
+
+from sergio.kernels.gramian import GramianFromArray
+from colito.cache import cache_to_disk
+
+class RankDeficientMatrixWarning(Warning): pass
+
 class ProgressParallel(joblib.Parallel):
     def __call__(self, *args, total=None, **kwargs):
         self._total = total
@@ -78,6 +85,32 @@ def compute_mean_map_kernel(V, K, empty=np.nan, progress=False):
     K_mm[~idl_ok,:] = empty
     return K_mm
 
+def compute_mkl_alignment_coeffs(W, v, k=10, mu_w=1e-5, eps=1e-5):
+    from numpy.linalg import norm
+    from scipy.sparse.linalg import eigsh 
+    n = W.shape[0]
+    l,S = eigsh(W, k=k)
+    idl_z = l<eps
+    if np.any(idl_z):
+        warn = RankDeficientMatrixWarning(f'During pseudo inverse computation of W: {idl_z.sum()} eigenvalues below tolerance of {eps:g} discarded. Remaining: {len(idl_z)-idl_z.sum()}.')
+        warnings.warn(warn)
+        l=l[~idl_z]
+        S = S[:,~idl_z]
+    N = S*(l+mu_w)**-.5@S.T
+    a = N@v[:,None]
+    a_nrm = a/norm(a)
+    # Solve ||z-a_nrm|| s.t.: Nz>0
+    from cvxopt import solvers, matrix
+    solvers.options['show_progress'] = False
+    # qp: 1/2 xTPx + qTp st: Gx<h
+    P = matrix(np.eye(n))
+    q = matrix(-a_nrm)
+    G = matrix(-N)
+    h = matrix(np.zeros(n))
+    res = solvers.qp(P=P, q=q, G=G, h=h)
+    z = np.array(res['x']).flatten()
+    x = N@z
+    return x.flatten()/np.linalg.norm(x)
 
 class SubkernelOptimiser:
     def __init__(self, features, validities, spaces, kern: typing.Callable, cache_dir, progress=False, tag='',
@@ -108,7 +141,7 @@ class SubkernelOptimiser:
     @property
     def validities(self): return self._validities
     @property
-    def val_ok(self): return self._validities[:,self._idl_ok]
+    def val_nz(self): return self._validities[:,self._idl_ok]
     @property
     def n_feats(self): return self._features.shape[1]
     @property
@@ -117,7 +150,7 @@ class SubkernelOptimiser:
     def n_sets(self): return self._validities.shape[1]
     
     def compute_mean_map_kernel(self, K, ok_only=True):
-        K_mm = compute_mean_map_kernel(self.val_ok if ok_only else self.validities, K)
+        K_mm = compute_mean_map_kernel(self.val_nz if ok_only else self.validities, K)
         return K_mm
     def jaccard_alignment_from_feature_kernel(self, K):
         K_mm = self.compute_mean_map_kernel(K)
@@ -151,7 +184,7 @@ class SubkernelOptimiser:
         return self._kern(X, *args, **kwargs)
 
 
-    def optimise_single_feature(self, idx_feat, spaces=None, features=None, gp_opts = {}):
+    def optimise_single_feature(self, idx_feat, spaces=None, features=None, gp_opts = {}, with_info=False):
         from skopt.optimizer import gp_minimize
         if features is None:
             features = self._features
@@ -169,7 +202,41 @@ class SubkernelOptimiser:
             return par_evals[x]
 
         res = gp_minimize(evaluate, spaces, **{**self._gp_opts, **gp_opts})
-        return par_evals
+        if with_info:
+            return par_evals, res
+        else:
+            return par_evals
+
+    def compute_optimal_mm_gramians(self, rank_mm, keys=None, n_jobs=1, use_cache=True):
+        def _provider(idx):
+            K_mm = self.get_subkernel_mm(idx)
+            G = GramianFromArray(K_mm, rank=rank_mm)
+            return G
+    
+        if use_cache:
+            @cache_to_disk(cache_dir=self._cache_dir, fmt=f'{self._tag}mmgram-r{rank_mm}-{{idx}}.pickle')
+            def provider(idx):
+                return _provider(idx)
+        else:
+            provider = _provider
+        if keys is None:
+            keys = list(self.evaluations.keys())
+        keys = np.array(keys)[np.random.permutation(len(keys))]
+        def process_keys_batch(keys):
+            gramians = {}
+            for key in keys:
+                G = provider(key)
+                gramians[key] = G
+            return gramians
+        
+        if n_jobs is None:
+            n_jobs = joblib.cpu_count()
+        parts = np.array_split(keys, n_jobs)
+        par = ProgressParallel(n_jobs=n_jobs)
+        gramians = par([joblib.delayed(process_keys_batch)(part) for part in parts] , total=len(parts))
+        from itertools import chain
+        joined = dict(chain(*[g.items() for g in gramians]))
+        return joined
 
     def optimise_subkernel_params(self, indices, n_jobs=1):
         parts = np.array_split(indices, n_jobs)
@@ -186,13 +253,12 @@ class SubkernelOptimiser:
             from itertools import chain
             res = dict(chain(*[p.items() for p in packs]))
         return res
-
+    
     def get_subkernel_params(self, train=False, use_cache=True, tag=None,  **kwargs):
         res = {}
         missing = []
         if use_cache:
             for fi in range(self.n_feats):
-                res_feat = None
                 try:
                     res[fi] = self._load_cache(fi, tag=tag)
                 except FileNotFoundError:
@@ -211,3 +277,13 @@ class SubkernelOptimiser:
         pars = list(evals.keys())
         opt_pars = pars[np.argmax(vals)]
         return self.invoke_kernel(idx, opt_pars)
+    
+    def get_subkernel_mm(self, idx):
+        K = self.get_subkernel(idx)
+        return self.compute_mean_map_kernel(K)
+
+    def get_subkernel_gramian(self, idx, k=10):
+        '''Returns a low-rank Gramian for the kernel'''
+        from sergio.kernels.gramian import GramianFromArray
+        K = self.get_subkernel(idx)
+        return GramianFromArray(K, rank=k)
