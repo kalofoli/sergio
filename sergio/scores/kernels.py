@@ -58,8 +58,6 @@ class MaximumMeanDeviationScoreMixin(CachingScoreMixin, SummarisableFromFields):
     @property
     def dimension(self): return self.gramian.dimension
     @property
-    def rank(self): return self.gramian.rank
-    @property
     def gramian(self): return self._gramian
     @property
     def contrastive(self): return self.comparison == ComparisonMode.CONTRASTIVE
@@ -75,6 +73,8 @@ class MeasureMaximumMeanDeviation(MaximumMeanDeviationScoreMixin, Measure):
     __summary_fields__ = SummaryFieldsAppend(('rank',))
     __summary_conversions__ = {'comparison':str}
     
+    @property
+    def rank(self): return self._rank
     def __init__(self, gramian, comparison:ComparisonMode, rank=0):
         super().__init__(gramian, comparison)
         if rank == 0:

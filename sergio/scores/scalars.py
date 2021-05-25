@@ -12,13 +12,12 @@ from sergio.data import EntityAttributes, EntityAttributesWithAttributeTarget
 from sergio.scores import Measure, OptimisticEstimator, CachingScoreMixin
 from colito.summaries import SummarisableFromFields, SummaryFieldsAppend
 from types import SimpleNamespace
-from colito.collection import CollectionMemberWithKeywordResolver
 from colito import NamedUniqueConstant
 
 
 
 _UNSET = NamedUniqueConstant('Unset')
-class ScalarEvaluatorMixin(SummarisableFromFields, CollectionMemberWithKeywordResolver):
+class ScalarEvaluatorMixin(SummarisableFromFields):
     __summary_fields__ = SummaryFieldsAppend(('target_name'))
     def __init__(self, *args, target_data, target_name, **kwargs):
         super().__init__(*args, **kwargs)
