@@ -375,7 +375,7 @@ class ColitoLogger(LoggerAdapter):
                 
     def __getattr__(self, level_name):
         if level_name.upper() not in _nameToLevel or level_name.lower() != level_name:
-            raise AttributeError(f"AttributeError: '{self}' object has no attribute '{level_name}'")
+            raise AttributeError(f"AttributeError: '{self.__class__.__name__}' object has no attribute '{level_name}'")
         self.level_name = self._make_fn(level_name)
         return self.level_name
 

@@ -124,6 +124,7 @@ class OptimisticEstimatorMaximumMeanDeviationSingleDirection(MaximumMeanDeviatio
     __collection_title__ = 'Maximum Mean Deviation using a single direction bound'
     __collection_tag__ = "mmd-sd"
     __summary_conversions__ = {'comparison':str}
+    __summary_fields__ = ('comparison','max_rank')
     
     def __init__(self, gramian, comparison:ComparisonMode, max_rank:int=None):
         super().__init__(gramian, comparison)
