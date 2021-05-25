@@ -29,6 +29,40 @@ class ProgressParallel(joblib.Parallel):
         self._pbar.n = self.n_completed_tasks
         self._pbar.refresh()
         
+def compute_matrix_frobenius(gramians, K_jac):
+    n = len(gramians)
+    W = np.zeros((n,n))
+    v = np.zeros(n)
+    f_jac = np.linalg.norm(K_jac, 'fro')
+    K_jac_nrm = K_jac/f_jac
+    for i,G_i in enumerate(gramians):
+        for j,G_j in enumerate(gramians[i:],i):
+            W[i,j] = np.sum(G_i*G_j)
+            W[j,i] = W[i,j]
+    for i,G_i in enumerate(gramians):
+        v[i] = np.sum(G_i*K_jac_nrm)
+    return W, v
+
+def compute_gramian_frobenius(gramians, K_jac):
+    n = len(gramians)
+    W = np.zeros((n,n))
+    y = np.zeros(n)
+    
+    f_jac = np.linalg.norm(K_jac, 'fro')
+    K_jac_nrm = K_jac/f_jac
+    for i,g_i in enumerate(gramians):
+        l_i,S_i = g_i.eigenvals, g_i.eigenvecs
+        l_i = np.maximum(0,l_i)
+        V_i = S_i*l_i**.5
+        for j,g_j in enumerate(gramians[i:],i):
+            l_j,S_j = g_j.eigenvals, g_j.eigenvecs
+            l_j = np.maximum(0,l_j)
+            V_j = S_j*l_j**.5
+            
+            W[i,j] = np.sum((V_i.T@V_j)**2)
+            W[j,i] = W[i,j]
+        y[i] = np.trace(V_i.T@K_jac_nrm@V_i)
+    return W, y
 
 def jaccard_kernel(X, Y=None):
     '''Computes the Jaccard kernel between all (column) features in the V set
@@ -111,6 +145,11 @@ def compute_mkl_alignment_coeffs(W, v, k=10, mu_w=1e-5, eps=1e-5):
     z = np.array(res['x']).flatten()
     x = N@z
     return x.flatten()/np.linalg.norm(x)
+
+def compute_mkl_alignment_value(a,W,v):
+    a = a/np.linalg.norm(a)
+    denom2 = np.linalg.multi_dot([a,W,a])
+    return a@v/denom2**.5
 
 class SubkernelOptimiser:
     def __init__(self, features, validities, spaces, kern: typing.Callable, cache_dir, progress=False, tag='',
@@ -236,8 +275,20 @@ class SubkernelOptimiser:
         gramians = par([joblib.delayed(process_keys_batch)(part) for part in parts] , total=len(parts))
         from itertools import chain
         joined = dict(chain(*[g.items() for g in gramians]))
-        return joined
+        srt = dict(sorted(joined.items(),key=lambda x:x[0]))
+        return srt
 
+    def aggregate_subkernels(self, coeffs, k=None, eps=1e-6, dtype=np.float64):
+        idl_sel = coeffs>eps
+        K = np.zeros((self.n_entities, self.n_entities), dtype=dtype)
+        if k is not None:
+            p = np.argsort(coeffs)[::-1]
+            idl_sel[p[k:]] = 0
+        idx_sel = np.where(idl_sel)[0]
+        for idx in idx_sel:
+            a = coeffs[idx]
+            K += a*self.get_subkernel(idx)
+        return K
     def optimise_subkernel_params(self, indices, n_jobs=1):
         parts = np.array_split(indices, n_jobs)
         def test_feats(parts):
