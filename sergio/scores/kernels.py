@@ -52,7 +52,7 @@ COMPARISON_RESOLVER = make_enum_resolver(ComparisonMode)
 
 class MaximumMeanDeviationScoreMixin(CachingScoreMixin, SummarisableFromFields):
     __collection_title__ = 'Maximum Mean Deviation'
-    __summary_fields__ = SummaryFieldsAppend(('comparison',))
+    __summary_fields__ = SummaryFieldsAppend(('comparison','gamma'))
     @property
     def comparison(self): return self._comparison
     @property
@@ -60,23 +60,25 @@ class MaximumMeanDeviationScoreMixin(CachingScoreMixin, SummarisableFromFields):
     @property
     def gramian(self): return self._gramian
     @property
+    def gamma(self): return self._gamma
+    @property
     def contrastive(self): return self.comparison == ComparisonMode.CONTRASTIVE
     
-    def __init__(self, gramian:Gramian, comparison:ComparisonMode, *args, **kwargs):
+    def __init__(self, gramian:Gramian, comparison:ComparisonMode, *args, gamma=1.0, **kwargs):
         super().__init__(*args, **kwargs)
         self._gramian = gramian
         self._comparison = COMPARISON_RESOLVER.resolve(comparison)
+        self._gamma = gamma
         
 class MeasureMaximumMeanDeviation(MaximumMeanDeviationScoreMixin, Measure):
     __collection_title__ = 'Maximum Mean Deviation'
     __collection_tag__ = "mmd"
     __summary_fields__ = SummaryFieldsAppend(('rank',))
-    __summary_conversions__ = {'comparison':str}
     
     @property
     def rank(self): return self._rank
-    def __init__(self, gramian, comparison:ComparisonMode, rank=0):
-        super().__init__(gramian, comparison)
+    def __init__(self, gramian, comparison:ComparisonMode, rank:int=0, gamma:float=1.0):
+        super().__init__(gramian, comparison, gamma=gamma)
         if rank == 0:
             rank = self._gramian.rank
         self._rank = rank
@@ -107,7 +109,8 @@ class MeasureMaximumMeanDeviation(MaximumMeanDeviationScoreMixin, Measure):
             xtv = S[x,:].sum(0)
             quant_paren = xtv-m*self._c_i
             quant_sum = l.dot(quant_paren*quant_paren)
-            J = quant_sum/fm
+            scale = fm**(self.gamma -2)
+            J = scale*quant_sum
         else:
             J = 0
         return J
@@ -124,10 +127,10 @@ class OptimisticEstimatorMaximumMeanDeviationSingleDirection(MaximumMeanDeviatio
     __collection_title__ = 'Maximum Mean Deviation using a single direction bound'
     __collection_tag__ = "mmd-sd"
     __summary_conversions__ = {'comparison':str}
-    __summary_fields__ = ('comparison','max_rank')
+    __summary_fields__ = SummaryFieldsAppend(('max_rank',))
     
-    def __init__(self, gramian, comparison:ComparisonMode, max_rank:int=None):
-        super().__init__(gramian, comparison)
+    def __init__(self, gramian, comparison:ComparisonMode, max_rank:int=None, gamma:float=1.0):
+        super().__init__(gramian, comparison, gamma=gamma)
         self._eigenvals,S = self._gramian.eigenvals, self._gramian.eigenvecs
         
         if max_rank is None:
@@ -211,7 +214,8 @@ class OptimisticEstimatorMaximumMeanDeviationSingleDirection(MaximumMeanDeviatio
             cos_sq_rem -= cos_sq_cur
             rayleigh += cos_sq_cur*self._eigenvals[max_ev_idx]
         fm = m_run*(n-m_run)/n if contrastive else m_run
-        f_all = ztz_run/fm*rayleigh
+        scale = fm**(self.gamma-2)
+        f_all = scale*ztz_run*rayleigh
         if debug: return pd.DataFrame({'m':m_run,'f':f_all,'cost_sq':list(cos_sq),'rayleigh':rayleigh, 'cos_sq_rem':cos_sq_rem})
         return float(f_all.max())
         
