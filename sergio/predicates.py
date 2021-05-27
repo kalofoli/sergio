@@ -172,7 +172,7 @@ class PredicateCategorical(AttributePredicate):
 
     def validate_true(self, entity_index:EntityIndexType=slice(None, None, None)) -> np.ndarray:
         idl = self.series[entity_index] == self.category
-        return idl.values
+        return idl.to_numpy()
 
     def to_string(self, compact:bool=False) -> str:
         cls: Type[AttributePredicate] = self.__class__
@@ -245,7 +245,7 @@ class PredicateRanged(AttributePredicate):
         if interval.upper is not None:
             idl_ok = (series <= interval.upper) if interval.ueq else (series < interval.upper)
             idl = idl & idl_ok
-        return idl.values
+        return idl.to_numpy()
 
     def __lt__(self, other: 'PredicateRanged') -> bool:
         if isinstance(other, AttributePredicate):
@@ -285,7 +285,7 @@ class PredicateBoolean(AttributePredicate):
         return text
 
     def validate_true(self, entity_index:EntityIndexType=slice(None, None, None)) -> np.ndarray:
-        series = self.series[entity_index].astype(bool).values
+        series = self.series[entity_index].astype(bool).to_numpy()
         return series
 
     def __lt__(self, other: 'PredicateBoolean') -> bool:
@@ -333,7 +333,7 @@ class Prediciser(SummarisableAsDict, Cloneable):
         '''Create ranged predicate based on a numeric data series'''
         series: Series = attribute.series
         
-        intervals = self.discretiser.discretise(series.values)
+        intervals = self.discretiser.discretise(series.to_numpy())
         negate = self.negate & PredicateKinds.BOOLEAN
         
         def mk_preds(interval:Interval) -> PredicateRanged:

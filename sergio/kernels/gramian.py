@@ -171,13 +171,14 @@ class GramianWithNullspace(GramianFromArray):
         if nullspace is None or nullspace.shape[1] == 0:
             n = K.shape[0]
             N = np.zeros((n,0))
+            super().__init__(K=K, eigs=eigs, rank=rank)
             K_out = K
         else:
             N = np.array(nullspace).astype(float)
             D = (K@N)@np.linalg.solve(N.T@N, N.T)
             K_out = K-D
+            super().__init__(K=K_out, rank=rank)
         self._nullspace = N
-        super().__init__(K=K_out, rank=rank)
     @property
     def nullspace(self):
         return self._nullspace
