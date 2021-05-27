@@ -8,6 +8,7 @@ import numpy as np
 
 from types import SimpleNamespace
 from typing import Sequence
+from colito.summaries import SummarisableFromFields, SummaryFieldsAppend
 
 
 class EigenValueAccessor:
@@ -67,7 +68,10 @@ class EigenValueAccessorTop(EigenValueAccessor):
         self._eigs.l = l[p]
         self._eigs.S = S[:,p]
 
-class Gramian:
+class Gramian(SummarisableFromFields):
+    
+    __summary_fields__ = ('rank','dimension') 
+    
     def dot(self, X):
         raise NotImplementedError('Override')
     
@@ -142,6 +146,44 @@ class GramianFromArray(Gramian):
         self._rank = len(l)
         p = np.argsort(l[::-1])
         self._eigs = (l[p],S[:,p])
+
+class GramianWithNullspace(GramianFromArray):
+    '''Provides a Gramian from an array of its values
+    
+    >>> n = 10
+    >>> K = np.random.RandomState(0).random((n,n)); K = K@K.T
+    >>> from sergio.kernels.euclidean import RadialBasisFunctionKernel
+    >>> V = np.random.RandomState(1).random((n,2))
+    >>> G = GramianWithNullspace(K, nullspace=V)
+    >>> x = np.random.RandomState(0).random(n)
+    >>> np.max(G.dot(x) - K@(x-V@np.linalg.solve(V.T@V,V.T@x)))<1e-14
+    True
+    >>> np.max(np.abs(G.K@V)) < 1e-14
+    True
+    >>> G.nullspace_dimension
+    2
+    >>> G.rank
+    10
+    '''
+    __summary_fields__ = SummaryFieldsAppend(('nullspace_dimension'))
+    def __init__(self, K, eigs=None, rank=None, nullspace=None):
+        # TODO: make faster
+        if nullspace is None or nullspace.shape[1] == 0:
+            n = K.shape[0]
+            N = np.zeros((n,0))
+            K_out = K
+        else:
+            N = np.array(nullspace).astype(float)
+            D = (K@N)@np.linalg.solve(N.T@N, N.T)
+            K_out = K-D
+        self._nullspace = N
+        super().__init__(K=K_out, rank=rank)
+    @property
+    def nullspace(self):
+        return self._nullspace
+    @property
+    def nullspace_dimension(self):
+        return self._nullspace.shape[1]
 
 class GramianFromDataset(GramianFromArray):
     '''Computes a kernel on a dataset.

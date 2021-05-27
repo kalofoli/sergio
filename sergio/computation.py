@@ -35,6 +35,7 @@ from colito import NamedUniqueConstant
 from collections import namedtuple
 from sergio.summaries import SelectorSummariser
 from colito.cloning import Cloneable
+from sergio.language.base import Selector
 
 log = getModuleLogger(__name__) #pylint: disable=invalid-name
 
@@ -89,12 +90,12 @@ OptimisationResult = namedtuple('OptimisationResult' ,('result_history', 'subgro
 class Computation(SummarisableFromFields, Cloneable):
     SCORE_CONFIGS = ['AverageCoreness']
     __summary_fields__ = ('tag', 'runtime_environment', 'dataset', 'language', 'measure',
-                          'optimistic_estimator', 'search', 'subgroups')
+                          'optimistic_estimator', 'search', 'subgroups','removed_subgroups')
     
-    __summary_conversions__ = {'subgroups': SummarisableList}
+    __summary_conversions__ = {'subgroups': SummarisableList, 'removed_subgroups': SummarisableList}
 
     def __init__(self, tag=None, log=log, file_manager = None, cache = DEFAULT_FILE_CACHE,
-                 prediciser = None, dataset = None, language = None, oest = None, measure = None, gramian = None):
+                 prediciser = None, dataset = None, language = None, oest = None, measure = None, gramian = None, removed_subgroups=[]):
         self._file_manager: FileManager = file_manager if file_manager is not None else FileManager()
         self._cache: PersistentCache = cache
         self._runtime_environment = RuntimeEnvironment()
@@ -110,6 +111,8 @@ class Computation(SummarisableFromFields, Cloneable):
         self.measure = measure
         self._gramian = None
         self.gramian = gramian
+        self._removed_subgroups = []
+        self.removed_subgroups = removed_subgroups
         self._kernel = None
         self._tag = tag if tag is not None else str(datetime.timestamp(datetime.now()))
         self._result = OptimisationResult(None, None, None)
@@ -184,6 +187,18 @@ class Computation(SummarisableFromFields, Cloneable):
         return self._result.subgroups if self._result is not None else None
     
     @property
+    def removed_subgroups(self):
+        '''The result object, if exists'''
+        return self._removed_subgroups
+    
+    @removed_subgroups.setter
+    def removed_subgroups(self, which):
+        removed_subgroups = []
+        for sg in which:
+            removed_subgroups.append(self.parse_subgroup(sg))
+        self._removed_subgroups = removed_subgroups
+    
+    @property
     def measure(self) -> Measure:
         return self._measure
     measure = default_setter(measure, cls=Measure)
@@ -251,8 +266,8 @@ class Computation(SummarisableFromFields, Cloneable):
         self._prediciser = self.parse_prediciser(cuts, ranges, negate)
         self._log.info(f'Loaded prediciser {self._prediciser}.')
         return self
-        
-    def parse_language(self, name='closure-conjunctions-restricted'):
+
+    def parse_language(self, name='conjunctions'):
         language_cls = Language.__collection_factory__.tags[name]
         if self.dataset is None:
             raise ValueError('No dataset is set; languages need a dataset in order to be loaded.')
@@ -261,7 +276,7 @@ class Computation(SummarisableFromFields, Cloneable):
         predicates = tuple(dataset.make_predicates(prediciser))
         return language_cls(self.dataset, predicates)
         
-    def load_language(self, name='closure-conjunctions-restricted'):
+    def load_language(self, name='conjunctions'):
         """
         >>> c = Computation(cache=None, file_manager=FileManager('datasets'))
         >>> c.dataset = 'moondot'
@@ -273,15 +288,51 @@ class Computation(SummarisableFromFields, Cloneable):
         self._language = self.parse_language(name)
         self._log.info(f'Loaded language {name} {self.language} ({len(self.language.predicates)} predicates)')
         return self
+
+    def parse_subgroup(self, what):
+        """
+        >>> c = Computation(cache=None, file_manager=FileManager('datasets'))
+        >>> c.dataset = 'moondot'
+        >>> _ = c.load_prediciser()
+        >>> c.language = 'conjunctions'
+        >>> tuple(map(str,c.language.refine(c.language.root)))
+        ('{main}', '{!main}', '{a}', '{!a}', '{b}', '{!b}', '{c}', '{!c}')
+        """
+        if isinstance(what, Selector):
+            sg = what
+        else:
+            language = self._require('language','subgroups')
+            if isinstance(what, str):
+                parser = language.make_parser()
+                sg = parser.parse(what)
+            else:
+                raise TypeError(f'Cannot parse subgroup from {what} which is of type {type(what).__name__}.')
+        return sg
+    
+    def remove_subgroup(self, what):
+        """
+        >>> c = Computation(cache=None, file_manager=FileManager('datasets'))
+        >>> _ = c.load_dataset('moondot').load_prediciser().load_language()
+        >>> c.removed_subgroups = []
+        >>> _ = c.remove_subgroup('{main}')
+        >>> c.removed_subgroups
+        [<ConjunctionSelector: <PredicateBoolean:["main"]>>]
+        >>> c.removed_subgroups = ['{main}','{c}']
+        >>> c.removed_subgroups
+        [<ConjunctionSelector: <PredicateBoolean:["main"]>>, <ConjunctionSelector: <PredicateBoolean:["c"]>>]
+        """
+        sg = self.parse_subgroup(what)
+        self._removed_subgroups.append(sg)
+        return self
     
     def _require(self, attribute, loadable):
         '''Complain if not set'''
         try:
             val = getattr(self, attribute)
         except AttributeError:
-            raise ValueError(f'Loading of {loadable} requires the attribute "{attribute}" which is not available in {self.__class__.__name__}.')
+            raise ValueError(f'Parsing of {loadable} requires the attribute "{attribute}" which is not available in {self.__class__.__name__}.')
         if val is None:
-            raise ValueError(f'Loading of {loadable} requires "{attribute}" to be set.')
+            raise ValueError(f'Parsing of {loadable} requires "{attribute}" to be set.')
         return val
     
     MISSING = NamedUniqueConstant('Missing')
@@ -390,10 +441,10 @@ class Computation(SummarisableFromFields, Cloneable):
         ...     .load_dataset('toy-scalar:circledots,ATTR,outer').load_prediciser().load_language()\
         ...     .load_measure('jaccard').load_optimistic_estimator('jaccard')
         >>> c
-        <Computation[doctest] D:<EntityAttributesWithAttributeTarget[circledots](147x2/3) target: outer(bool@2)>, L:<ClosureConjunctionLanguageRestricted: of 10 predicates>, SG:-, M:<MeasureJaccard(target_name='outer')>, O:<OptimisticEstimatorJaccard(target_name='outer')>>
+        <Computation[doctest] D:<EntityAttributesWithAttributeTarget[circledots](147x2/3) target: outer(bool@2)>, L:<ConjunctionLanguage: of 10 predicates>, SG:-, M:<MeasureJaccard(target_name='outer')>, O:<OptimisticEstimatorJaccard(target_name='outer')>>
         >>> res = c.optimise()
         >>> ','.join(map(str,res.subgroups))
-        '{[label=circle]^[label!=dot]^[label!=small]^[label!=spread]}'
+        '{[label=circle]}'
         '''
         if track_results:
             log.info('Attaching results tracker visitor.')
@@ -446,10 +497,10 @@ class Computation(SummarisableFromFields, Cloneable):
         ...     .load_dataset('toy-scalar:circledots,ATTR,outer').load_prediciser().load_language()\
         ...     .load_measure('coverage-mean-shift').load_optimistic_estimator('coverage-mean-shift')
         >>> c
-        <Computation[doctest] D:<EntityAttributesWithAttributeTarget[circledots](147x2/3) target: outer(bool@2)>, L:<ClosureConjunctionLanguageRestricted: of 10 predicates>, SG:-, M:<MeasureCoverageMeanShift(coverage_exponent=1.0)>, O:<OptimisticEstimatorCoverageMeanShift(coverage_exponent=1.0)>>
+        <Computation[doctest] D:<EntityAttributesWithAttributeTarget[circledots](147x2/3) target: outer(bool@2)>, L:<ConjunctionLanguage: of 10 predicates>, SG:-, M:<MeasureCoverageMeanShift(coverage_exponent=1.0)>, O:<OptimisticEstimatorCoverageMeanShift(coverage_exponent=1.0)>>
         >>> res = c.optimise_inplace(depths=1)
         >>> ','.join(map(str,res.subgroups))
-        '{[label=circle]^[label!=dot]^[label!=small]^[label!=spread]}'
+        '{[label=circle]}'
         >>> c.summarise_to_json()[0]
         '{'
         '''
@@ -487,7 +538,7 @@ class Computation(SummarisableFromFields, Cloneable):
     
 if __name__ == "__main__":
     import doctest
-    doctest.testmod() 
+    doctest.testmod()
     
     
     
