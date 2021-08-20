@@ -85,12 +85,12 @@ class SearchState:
         
     def __str__(self):
         set2str = self.set2str
-        num_preds = len(self.selector.language.predicates)
+        num_predicates = len(self.selector.language.predicates)
         prn = lambda v: f'{v:5.3f}' if v is not None else 'XXXXX'
         return (fr'({prn(self._objective_value)}/{prn(self._optimistic_estimate)}'
                 fr'|@{self.depth}\{len(self.pruned)}'
                 fr'|{self.selector}{self.selector.indices_path if hasattr(self.selector,"indices_path") else ""}'
-                fr'\({set2str(self.pruned,num_preds,sep=",")})')
+                fr'\({set2str(self.pruned,num_predicates,sep=",")})')
 
     def __repr__(self):
         return f'<{self.__class__.__name__}{self!s}>'

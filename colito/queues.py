@@ -34,14 +34,14 @@ class Entry(Iterable, Generic[DataType]):
         return self._data
     
     @classmethod
-    def worst(cls, data: DataType=None) -> 'Entry':
+    def worst(cls, data=None) -> 'Entry':
         '''Create the worse possible priority entry'''
-        raise NotImplementedError()
+        return cls(data=data, priority=cls.PRIORITY_WORST)
     
     @classmethod
-    def best(cls, data: DataType=None) -> 'Entry':
+    def best(cls, data=None) -> 'Entry':
         '''Create the best possible priority entry'''
-        raise NotImplementedError()
+        return cls(data=data, priority=cls.PRIORITY_BEST)
 
     def copy(self) -> 'Entry[DataType]':
         '''Create a (shallow) copy otf this entry'''
@@ -75,13 +75,10 @@ class MinEntry(Entry[DataType], Generic[DataType]):
     def __lt__(self, entry) -> bool:
         return self.priority < entry.priority
 
-    @classmethod
-    def worst(cls, data=None) -> Entry:
-        return cls(data=data, priority=inf)
-    
-    @classmethod
-    def best(cls, data=None) -> Entry:
-        return cls(data=data, priority=-inf)
+    PRIORITY_WORST = inf
+    PRIORITY_BEST = -inf
+    priority_best = min
+    priority_worst = max
 
     
 class MaxEntry(Entry[DataType], Generic[DataType]):
@@ -90,13 +87,10 @@ class MaxEntry(Entry[DataType], Generic[DataType]):
     def __lt__(self, entry) -> bool:
         return self.priority > entry.priority
 
-    @classmethod
-    def worst(cls, data=None) -> Entry:
-        return cls(data=data, priority=-inf)
-    
-    @classmethod
-    def best(cls, data=None) -> Entry:
-        return cls(data=data, priority=+inf)
+    PRIORITY_WORST = -inf
+    PRIORITY_BEST = inf
+    priority_best = max
+    priority_worst = min
 
 
 class PriorityQueue(Sized, Iterable, Generic[DataType]):

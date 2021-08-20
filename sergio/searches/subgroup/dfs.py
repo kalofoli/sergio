@@ -4,7 +4,7 @@ Created on May 3, 2021
 @author: janis
 '''
 
-from typing import NamedTuple, Iterable, Tuple, Set, List, Union
+from typing import Iterable, Tuple, Set, List, Union, Callable
 
 import math
 import itertools
@@ -25,13 +25,14 @@ from colito.statistics import StatisticsBase, StatisticsUpdater
 from collections import Counter
 
 from colito.logging import getModuleLogger
+import datetime
 
 log = getModuleLogger(__name__)
 
 class DepthFirstSearch(SubgroupSearch, SummarisableFromFields):
     __collection_tag__ = 'depth-first'
 
-    __summary_fields__ = SummaryFieldsAppend(('statistics', 'reached_max_depth', 'max_depth', 'state_scoring', 'objective_attainable', 'k'))
+    __summary_fields__ = SummaryFieldsAppend(('statistics', 'reached_max_depth', 'max_depth', 'state_scoring', 'objective_attainable', 'k', 'optimality_gap','objective_found'))
     
     def __init__(self, language: ConjunctionLanguage,
                  measure: Measure, optimistic_estimator: OptimisticEstimator,
@@ -43,7 +44,10 @@ class DepthFirstSearch(SubgroupSearch, SummarisableFromFields):
         self._stats = DepthFirstSearch.Statistics()
         self._states = None
         self._state_scoring: ProductBundle = ScoringFunctions.get(state_scoring)
-        self._objective_attainable:float = None
+        
+        # These can be confusing, but, remember, the result is an inverted priority k queue, i.e., points to the worst element, for O(logn) popping
+        self._objective_attainable_deeper:float = self.results.entry_type.PRIORITY_BEST
+        self._fn_optimum:Callable = self.results.entry_type.priority_worst # function to compute max resp. min depending on current mode
         self._max_depth = max_depth
         self._reached_max_depth = None
         self._visitor = visitor
@@ -60,15 +64,15 @@ class DepthFirstSearch(SubgroupSearch, SummarisableFromFields):
         :var deep: Number of unreachable top-nodes due to depth limit.
         '''
         
-        increase_popped= StatisticsUpdater('popped', 1, doc='Times a selector was popped')
-        increase_added= StatisticsUpdater('added', 1, doc='Times a result was added that superseded in fitness the so-far maintained list')
-        increase_created= StatisticsUpdater('created', 1, doc='Times a search state was created.')
-        increase_queued= StatisticsUpdater('queued', 1, doc='Times a predicate was queued.')
-        increase_pruned= StatisticsUpdater('pruned', 1, doc='Times a predicate was pruned during refinement (and propagated to all siblings)')
-        increase_ignored= StatisticsUpdater('ignored', 1, doc='Times a predicate was ignored immediately after popping (late pruning)')
-        increase_deep= StatisticsUpdater('deep', 1, doc='Number of unreachable top-nodes due to depth limit.')
-        increase_measures= StatisticsUpdater('measures', 1, doc='Number of measures evaluated')
-        increase_oests= StatisticsUpdater('oests', 1, doc='Number of oests evaluated')
+        increase_popped = StatisticsUpdater('popped', 1, doc='Times a selector was popped')
+        increase_added = StatisticsUpdater('added', 1, doc='Times a result was added that superseded in fitness the so-far maintained list')
+        increase_created = StatisticsUpdater('created', 1, doc='Times a search state was created.')
+        increase_queued = StatisticsUpdater('queued', 1, doc='Times a predicate was queued.')
+        increase_pruned = StatisticsUpdater('pruned', 1, doc='Times a predicate was pruned during refinement (and propagated to all siblings)')
+        increase_ignored = StatisticsUpdater('ignored', 1, doc='Times a predicate was ignored immediately after popping (late pruning)')
+        increase_deep = StatisticsUpdater('deep', 1, doc='Number of unreachable top-nodes due to depth limit.')
+        increase_measures = StatisticsUpdater('measures', 1, doc='Number of measures evaluated')
+        increase_oests = StatisticsUpdater('oests', 1, doc='Number of oests evaluated')
 
         
     @property
@@ -92,16 +96,26 @@ class DepthFirstSearch(SubgroupSearch, SummarisableFromFields):
     @property
     def objective_attainable(self):
         '''The best possible attainable by the unvisited states'''
-        if self._states is None:
-            att = None
-        else:
-            oest_vals = [state.optimistic_estimate for state in self._states]
-            if self._results.max_best:
-                att = np.max(oest_vals, initial='-inf')
-            else:
-                att = np.min(oest_vals, initial='inf')
-        return att
+        return self._objective_attainable_of(self._states)
     
+    @property
+    def objective_found(self):
+        return self.results.threshold
+    
+    @property
+    def optimality_gap(self):
+        val_cur = self.objective_found
+        val_bnd = self.objective_attainable
+        return abs((val_cur-val_bnd)/val_cur) if val_cur != 0 else float('inf')
+        
+    def _objective_attainable_of(self, states, initial=None):
+        att = self._objective_attainable_deeper if initial is None else initial
+        if states is not None and states:
+            oest_vals = (state.optimistic_estimate for state in states)
+            oest_opt = self._fn_optimum(oest_vals)
+            att = self._fn_optimum(att, oest_opt)
+        return att
+            
     def objective_value(self, selector:Selector) -> float:
         '''Compute objective value
         Used as callback from SearchState'''
@@ -138,6 +152,7 @@ class DepthFirstSearch(SubgroupSearch, SummarisableFromFields):
         self.try_add_state(root_state)
         if self.max_depth == 0:
             self._reached_max_depth = True
+            self._objective_attainable_deeper = root_state.optimistic_estimate
         else:
             self._states = [root_state]
             self._reached_max_depth = self.resume()
@@ -217,6 +232,8 @@ class DepthFirstSearch(SubgroupSearch, SummarisableFromFields):
                     if new_states:
                         self._reached_max_depth = True
                         stats.increase_deep(len(new_states))
+                        
+                        self._objective_attainable_deeper = self._objective_attainable_of(new_states, initial=self._objective_attainable_deeper)
         return self._reached_max_depth
 
     summary_name = 'depth-first-search'
@@ -302,7 +319,8 @@ class IterativeDeepening(SubgroupSearch, SummarisableFromFields):
             dfs.run()
 
             self.try_add_results(dfs.results.elements(sort=False), quiet=True)
-            log.info(f'ID: finished depth {depth} with stats: {dfs.statistics}')
+            if log.ison.info:
+                log.info(f'ID: finished depth {depth} in {datetime.timedelta(seconds=dfs.time_elapsed)} with gap {dfs.optimality_gap*100:.2f}% (best: {dfs.objective_found:5g} bound: {dfs.objective_attainable:6g}) and stats: {dfs.statistics}')
             if not dfs.reached_max_depth:
                 break
             depth += 1
