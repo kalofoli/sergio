@@ -114,7 +114,7 @@ class MeasureCoverageMeanShift(CoverageMeanShiftScoreMixin, ScalarMeasure):
         m,n = np.sum(idl), len(idl)
         if m:
             coverage = m/n
-            shift = target[idl].mean() - self._population_mean
+            shift = max(target[idl].mean() - self._population_mean,0)
             value = coverage**self._exps.coverage*shift**self._exps.shift
         else:
             value = 0
@@ -133,7 +133,7 @@ class OptimisticEstimatorCoverageMeanShift(CoverageMeanShiftScoreMixin, ScalarOp
         m = idl.sum()
         m_run = np.arange(1,m+1)
         coverages = (m_run/n)**self._exps.coverage
-        shifts = (y_sel_run/m_run - self._population_mean)**self._exps.shift
+        shifts = np.maximum(y_sel_run/m_run - self._population_mean,0)**self._exps.shift
         values = np.r_[0,coverages*shifts]
         idx_max = np.argmax(values)
         value = values[idx_max]
