@@ -94,7 +94,6 @@ class GramianFromArray(Gramian):
     
     >>> n = 10
     >>> K = np.random.RandomState(0).random((n,n)); K = K@K.T
-    >>> from sergio.kernels.euclidean import RadialBasisFunctionKernel
     >>> G = GramianFromArray(K)
     >>> x = np.random.RandomState(0).random(n)
     >>> np.max(G.dot(x) - K@x)
@@ -146,6 +145,98 @@ class GramianFromArray(Gramian):
         self._rank = len(l)
         p = np.argsort(l[::-1])
         self._eigs = (l[p],S[:,p])
+
+class GramianNystroemFromArray(Gramian):
+    '''Provides a low-rank Nystroem approximation of a Gramian
+    
+    >>> n,k = 10, 5
+    >>> K = np.random.RandomState(0).random((n,k)); K = K@K.T
+    >>> G = GramianNystroemFromArray(K, k)
+    >>> np.linalg.norm(G.K - K) < 1e-10
+    True
+    >>> l, S = np.linalg.eigh(K)
+    >>> p = np.argsort(l)[::-1]; S, l = S[:,p[:k]], l[p[:k]]
+    >>> np.linalg.norm(np.abs(G.eigenvecs/S)-1) < 1e-10
+    True
+    >>> np.linalg.norm(G.eigenvals - l) < 1e-10
+    True
+    >>> x = np.random.RandomState(1).random(n)
+    >>> np.linalg.norm(G.dot(x) - K@x) < 1e-10
+    True
+    >>> G.rank == k
+    True
+    >>> G = GramianNystroemFromArray((l,S))
+    >>> G
+    <GramianNystroemFromArray 10x5>
+    
+    >>> G = GramianNystroemFromArray((l,S), 7)
+    Traceback (most recent call last):
+      ...
+    ValueError: Requested rank 7 which is greater than available eigenvectors (5)
+    >>> G = GramianNystroemFromArray((l,S), 3)
+    >>> G
+    <GramianNystroemFromArray 10x3>
+    >>> np.linalg.norm(G.K - S[:,:3]*l[:3]@S[:,:3].T) < 1e-10
+    True
+    '''
+    def __init__(self, data, rank=None):
+        if isinstance(data, np.ndarray):
+            if rank is None:
+                raise TypeError('Argument "rank" is required by an array initialisation.')
+            l,S = self._compute_eigs(data, rank)
+        else:
+            l,S = data
+            if np.max(l.shape) != np.prod(l.shape):
+                raise ValueError(f'Spectral data: first argument must be a vector')
+            l = l.flatten()
+            if S.shape[1] != len(l):
+                raise ValueError(f'Spectral data: second argument must be an matrix with {len(l)} column eigenvectors')
+            l,S = self._normalise_eigs(l, S)
+            if rank is None:
+                rank = S.shape[1]
+            else:
+                if rank > S.shape[1]:
+                    raise ValueError(f'Requested rank {rank} which is greater than available eigenvectors ({S.shape[1]})')
+                S = S[:,:rank]
+                l = l[:rank]
+        self._eigs = l,S
+        super().__init__()
+    def dot(self, x):
+        l,S = self._eigs
+        return S.dot(l*(x.dot(S)))
+    @property
+    def K(self):
+        l,S = self._eigs
+        return S*l@S.T
+    @property
+    def dimension(self): return self.eigenvecs.shape[0]
+    @property
+    def rank(self): return self.eigenvecs.shape[1]
+    @property
+    def eigenvecs(self):
+        return self._eigs[1]
+    @property
+    def eigenvals(self):
+        return self._eigs[0]
+    def __str__(self):
+        return f'{self.dimension}x{self.rank}'
+    def __repr__(self):
+        return f'<{self.__class__.__name__} {self!s}>'
+    
+    @classmethod
+    def _normalise_eigs(cls, l, S):
+        p = np.argsort(l[::-1])
+        S = S*np.sign(S[0,:])[None,:]
+        return l[p],S[:,p]
+        
+    @classmethod
+    def _compute_eigs(cls, K, rank):
+        from scipy.sparse.linalg import eigsh
+        l, S = eigsh(K, rank)
+        l, S = cls._normalise_eigs(l, S)
+        return l, S
+
+
 
 class GramianWithNullspace(GramianFromArray):
     '''Provides a Gramian from an array of its values
