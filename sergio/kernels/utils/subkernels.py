@@ -8,49 +8,53 @@ import typing
 
 import numpy as np
 
-from tqdm import tqdm
 import joblib
 
-import warnings
+from colito.parallel import ProgressParallel
 
-from sergio.kernels.gramian import GramianFromArray
+import warnings
+import typing
+
+from sergio.kernels.gramian import GramianFromArray, Gramian
 from colito.cache import cache_to_disk
+from colito.parallel import tqdm
+from types import SimpleNamespace
 
 class RankDeficientMatrixWarning(Warning): pass
 
-class ProgressParallel(joblib.Parallel):
-    def __call__(self, *args, total=None, **kwargs):
-        self._total = total
-        with tqdm(total=total) as self._pbar:
-            return joblib.Parallel.__call__(self, *args, **kwargs)
 
-    def print_progress(self):
-        self._pbar.total = self.n_dispatched_tasks if not self._total is not None else self._total
-        self._pbar.n = self.n_completed_tasks
-        self._pbar.refresh()
-        
-def compute_matrix_frobenius(gramians, K_jac):
+def compute_matrix_frobenius(gramians: typing.List[np.ndarray], K_tar):
     n = len(gramians)
     W = np.zeros((n,n))
     v = np.zeros(n)
-    f_jac = np.linalg.norm(K_jac, 'fro')
-    K_jac_nrm = K_jac/f_jac
+    f_tar = np.linalg.norm(K_tar, 'fro')
+    K_tar_nrm = K_tar/f_tar
     for i,G_i in enumerate(gramians):
         for j,G_j in enumerate(gramians[i:],i):
             W[i,j] = np.sum(G_i*G_j)
             W[j,i] = W[i,j]
     for i,G_i in enumerate(gramians):
-        v[i] = np.sum(G_i*K_jac_nrm)
+        v[i] = np.sum(G_i*K_tar_nrm)
     return W, v
 
-def compute_gramian_frobenius(gramians, K_jac):
+def compute_gramian_frobenius(gramians:typing.Sequence[Gramian], K_tar, normalise=False, progress=False):
+    '''Compute the Frobenius inner products for MKL optimisation.
+    
+    @param gramians A sequence of Gramian objects.
+    @param K_tar The numpy array representing the target kernel.
+    @return Tuple[np.ndarray, np.ndarray] W,v where W is the matrix of inner products
+        between the Gramians and v is the inner product between the Gramians and the 
+        target kernel. 
+     
+    '''
     n = len(gramians)
     W = np.zeros((n,n))
-    y = np.zeros(n)
+    v = np.zeros(n)
     
-    f_jac = np.linalg.norm(K_jac, 'fro')
-    K_jac_nrm = K_jac/f_jac
-    for i,g_i in enumerate(gramians):
+    f_tar = np.linalg.norm(K_tar, 'fro')
+    K_tar_nrm = K_tar/f_tar
+    outer_seq = tqdm(gramians) if progress else gramians
+    for i,g_i in enumerate(outer_seq):
         l_i,S_i = g_i.eigenvals, g_i.eigenvecs
         l_i = np.maximum(0,l_i)
         V_i = S_i*l_i**.5
@@ -61,8 +65,13 @@ def compute_gramian_frobenius(gramians, K_jac):
             
             W[i,j] = np.sum((V_i.T@V_j)**2)
             W[j,i] = W[i,j]
-        y[i] = np.trace(V_i.T@K_jac_nrm@V_i)
-    return W, y
+        v[i] = np.trace(V_i.T@K_tar_nrm@V_i)
+    if normalise:
+        s = W.max()
+        W = W/s
+        v = v/np.sqrt(s)
+    return W, v
+
 
 def jaccard_kernel(X, Y=None):
     '''Computes the Jaccard kernel between all (column) features in the V set
@@ -89,7 +98,35 @@ def compute_kernel_alignment(K1, K2):
     frob_22 = np.sum(K2**2)
     return frob_12/np.sqrt(frob_11*frob_22)
 
-def compute_mean_map_kernel(V, K, empty=np.nan, progress=False):
+def normalise_kernel(K):
+    m = 1/np.sqrt(np.diag(K))
+    m[np.isnan(m)] = 1
+    return K*m[:,None]*m[None,:]
+
+def compute_extended_tanimoto_kernel(V, K, empty=np.nan, normalise=False):
+    '''Computes the extended Tanimoto kernel from set characteristics and a kernel, both over the same entities.
+    :param V: The set characteristics for each set (rows: entities, column: set)
+        The entries of V must be memberships and convertible to logicals.
+    :param K: The Gramian of a kernel over the entities over which V indicates set membership.
+    
+    :result: The Gramian of the mean map kernel. Its size is m x m, where m is the number of sets (columns of V)
+    '''
+    supports = V.sum(axis=0)
+    idl_ok = supports > 0
+    
+    M = V.T@K
+    N = M@V # nominator
+    m = M.sum(axis=1)
+    D = m[:,None] + m[None,:] - N
+    D[:,~idl_ok] = D[~idl_ok,:] = 1
+    K_et = N/D
+    K_et[:,~idl_ok] = empty
+    K_et[~idl_ok,:] = empty
+    if normalise:
+        K_et = normalise_kernel(K_et)
+    return K_et
+
+def compute_mean_map_kernel(V, K, empty=np.nan):
     '''Computes the mean map kernel from set characteristics and a kernel, both over the same entities.
     :param V: The set characteristics for each set (rows: entities, column: set)
         The entries of V must be memberships and convertible to logicals.
@@ -100,26 +137,31 @@ def compute_mean_map_kernel(V, K, empty=np.nan, progress=False):
     supports = V.sum(axis=0)
     idl_ok = supports > 0
     
-    n_elems,n_sets = V.shape
-    
-    K_mm = np.empty((n_sets,n_sets), float)
-    if progress:
-        it = tqdm(range(n_sets))
-    else:
-        it = range(n_sets)
-    idx_ok = np.where(idl_ok)[0]
-    for oi, fi in enumerate(idx_ok):
-        v = V[:,fi].astype(bool)
-        idx_ok_rest = idx_ok[oi:]
-        k = K[v,:].sum(axis=0)/supports[fi]
-        k_mm = V[:,idx_ok_rest].T@k/supports[idx_ok_rest]
-        K_mm[fi,idx_ok_rest] = k_mm
-        K_mm[idx_ok_rest,fi] = k_mm
+    N = V.T@K@V
+    sup = V.sum(axis=0)
+    D = sup[:,None]*sup[None,:]
+    K_mm = N/D
     K_mm[:,~idl_ok] = empty
     K_mm[~idl_ok,:] = empty
     return K_mm
 
+def compute_mkl_alignment_coeffs_orthogonal_heuristic(W, v):
+    alg_single = v/np.diag(W)**.5
+    n = len(v)
+    alg_top = np.zeros(n-1)
+    p = np.argsort(alg_single)[::-1]
+    for i in range(1,n):
+        a_top = np.array(alg_single)
+        a_top[p[i:]] = 0
+        alg_top[i-1] = compute_mkl_alignment_value(a_top, W, v)
+    idx_max = np.argmax(alg_top)
+    a_best = np.array(alg_single)
+    a_best[p[idx_max+1:]] = 0
+    a_best /= np.linalg.norm(a_best)
+    return SimpleNamespace(a_best=a_best, alignment_best=alg_top[idx_max], alignments=alg_top, idx_max=idx_max, alignments_single=alg_single, p_sort=p)
+
 def compute_mkl_alignment_coeffs(W, v, k=10, mu_w=1e-5, eps=1e-5):
+    raise NotImplementedError('Do not use. Prefer the heuristic above')
     from numpy.linalg import norm
     from scipy.sparse.linalg import eigsh 
     n = W.shape[0]
@@ -289,6 +331,7 @@ class SubkernelOptimiser:
             a = coeffs[idx]
             K += a*self.get_subkernel(idx)
         return K
+    
     def optimise_subkernel_params(self, indices, n_jobs=1):
         parts = np.array_split(indices, n_jobs)
         def test_feats(parts):

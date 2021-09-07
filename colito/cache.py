@@ -353,9 +353,12 @@ class ValueCache(dict):
 
         return property(wrapped_getter) 
 
-def cache_to_disk(cache_dir, fmt=None):
+class CacheException(Exception): pass
+def cache_to_disk(cache_dir, fmt=None, recompute=False):
     '''A decorator that caches the value of this function to disk'''
     def decorator(fn):
+        if cache_dir is None:
+            return fn
         import inspect
         from functools import wraps
         sig = inspect.signature(fn)
@@ -369,20 +372,22 @@ def cache_to_disk(cache_dir, fmt=None):
             pars.apply_defaults()
             args = pars.arguments
             fname = os.path.join(cache_dir, fmt.format(**args))
-            try:
-                with open(fname, 'rb') as fid:
-                    data = pickle.load(fid)
-                    return data
-            except FileNotFoundError:
-                pass
-            except Exception:
-                raise
+            if not recompute:
+                try:
+                    with open(fname, 'rb') as fid:
+                        data = pickle.load(fid)
+                        return data
+                except (FileNotFoundError, EOFError):
+                    pass
+                except Exception as e:
+                    raise CacheException(f'While reading file {fname}') from e
             data = fn(**args)
             with open(fname, 'wb') as fid:
                 pickle.dump(data, fid)
             return data
         return wrapper
     return decorator
+
 
 
 

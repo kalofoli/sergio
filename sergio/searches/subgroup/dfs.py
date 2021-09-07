@@ -244,7 +244,7 @@ DepthSpec = Union[float, int, Iterable[int]]
 
 class IterativeDeepening(SubgroupSearch, SummarisableFromFields):
     __collection_tag__ = 'iterative-deepening'
-    __summary_fields__ = SummaryFieldsAppend(('statistics','state_scoring','steps','depths'))
+    __summary_fields__ = SummaryFieldsAppend(('statistics','state_scoring','steps','depths', 'objective_attainable', 'k', 'optimality_gap','objective_found'))
     __summary_conversions__ = SummaryConversionsAppend({'depths':str,'steps':SummarisableList})
     
     def __init__(self, language: ConjunctionLanguage,
@@ -261,6 +261,7 @@ class IterativeDeepening(SubgroupSearch, SummarisableFromFields):
         self._dfs_runs:List[DepthFirstSearch] = []
         self._state_scoring: ProductBundle = ScoringFunctions.get(state_scoring)
         
+    
     @classmethod
     def _get_depths(cls, depths: DepthSpec) -> Iterable[int]:
         '''Parse depth parameter to an integer iterable'''
@@ -306,6 +307,12 @@ class IterativeDeepening(SubgroupSearch, SummarisableFromFields):
     def state_scoring(self):
         '''the function used to sort the states. Higher values designate earlier popping.'''
         return self._state_scoring
+    @property
+    def objective_attainable(self): return self.steps[-1].objective_attainable if self.steps else None
+    @property
+    def optimality_gap(self): return self.steps[-1].optimality_gap if self.steps else None
+    @property
+    def objective_found(self): return self.steps[-1].objective_found if self.steps else None
     
     def _run(self) -> Tuple[Entry, ...]:
         depth_iter = self._get_depths(self.depths)
