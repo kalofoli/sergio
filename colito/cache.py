@@ -354,39 +354,83 @@ class ValueCache(dict):
         return property(wrapped_getter) 
 
 class CacheException(Exception): pass
-def cache_to_disk(cache_dir, fmt=None, recompute=False):
-    '''A decorator that caches the value of this function to disk'''
+def cache_to_disk(cache_dir, file=None, fmt=None, recompute=False):
+    '''A decorator that caches the value of this function to disk
+    
+    @param file Either a filename to use (possibly formatted with the arguments of the function)
+        or a callable witht he same signature as fn that returns a file name.
+    @param fmt A boolean to specify whether the file parameter is to be formatted.
+    @param recompute Controls computing the result. When True no loading is attempted,
+        when False the value is computed whenever loading fails. Otherwise it is assumed
+        to be a Callable[Any, List[Any], Dict[str,Any]] with signature:
+            recompute(data, args, kwargs)
+        invoked with the loaded data, a bool indicated whether a loading has been sucessfull,
+        and the parameters of the function to cache.
+    '''
+    if isinstance(fmt, str) and file is None:
+        file = fmt
+        fmt = True
     def decorator(fn):
+        nonlocal file, fmt
         if cache_dir is None:
             return fn
-        import inspect
+        if fmt is False and file is None:
+            raise ValueError('To avoid formatting a file must be specified.')
+        if isinstance(file, str) and fmt is False:
+            get_file = lambda *args, **kwargs: file
+        elif isinstance(file, Callable):
+            get_file = file
+            if fmt is True:
+                raise NotImplementedError('Cannot format the output of a callable file argument.')
+        else:
+            import inspect
+            sig = inspect.signature(fn)
+            
+            if file is None:
+                spars = ','.join(f'{p}={{{p}!r}}' for p in sig.parameters)
+                file = f'{fn.__name__}({spars}).pickle'
+            sig = inspect.signature(fn)
+            def get_file(*args, **kwargs):
+                pars = sig.bind(*args, **kwargs)
+                pars.apply_defaults()
+                arguments = pars.arguments
+                return file.format(**arguments)
         from functools import wraps
-        sig = inspect.signature(fn)
-        nonlocal fmt
-        if fmt is None:
-            spars = ','.join(f'{p}={{{p}!r}}' for p in sig.parameters)
-            fmt = f'{fn.__name__}({spars}).pickle'
         @wraps(fn)
         def wrapper(*args, **kwargs):
-            pars = sig.bind(*args, **kwargs)
-            pars.apply_defaults()
-            args = pars.arguments
-            fname = os.path.join(cache_dir, fmt.format(**args))
-            if not recompute:
+            fname = get_file(*args, **kwargs)
+            path = os.path.join(cache_dir, fname)
+            must_store = must_load = True
+            if recompute is not True:
+                loaded = False
+                data = None
                 try:
-                    with open(fname, 'rb') as fid:
+                    with open(path, 'rb') as fid:
                         data = pickle.load(fid)
-                        return data
+                        loaded = True
+                        must_store = False
                 except (FileNotFoundError, EOFError):
                     pass
                 except Exception as e:
                     raise CacheException(f'While reading file {fname}') from e
-            data = fn(**args)
-            with open(fname, 'wb') as fid:
-                pickle.dump(data, fid)
+                if loaded:
+                    if recompute is False:
+                        must_load = False
+                    else:
+                        must_load = recompute(data, args, kwargs)
+                        must_store = True
+                else:
+                    must_load = True
+            if must_load:
+                data = fn(*args, **kwargs)
+            if must_store:
+                with open(path, 'wb') as fid:
+                    pickle.dump(data, fid)
             return data
         return wrapper
     return decorator
+
+
 
 
 
