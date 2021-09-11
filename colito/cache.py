@@ -430,6 +430,94 @@ def cache_to_disk(cache_dir, file=None, fmt=None, recompute=False):
         return wrapper
     return decorator
 
+def _make_file_getter(fn, file, fmt):
+    if fmt is False and file is None:
+        raise ValueError('To avoid formatting a file must be specified.')
+    if isinstance(file, str) and fmt is False:
+        get_file = lambda *args, **kwargs: file
+    elif isinstance(file, Callable):
+        get_file = file
+        if fmt is True:
+            raise NotImplementedError('Cannot format the output of a callable file argument.')
+    else:
+        import inspect
+        sig = inspect.signature(fn)
+
+        if file is None:
+            spars = ','.join(f'{p}={{{p}!r}}' for p in sig.parameters)
+            file = f'{fn.__name__}({spars}).pickle'
+        sig = inspect.signature(fn)
+        def get_file(*args, **kwargs):
+            pars = sig.bind(*args, **kwargs)
+            pars.apply_defaults()
+            arguments = pars.arguments
+            return file.format(**arguments)
+    return get_file
+
+class LockedException(Exception):
+    def __init__(self, msg, fname=None, pid=None, since=None, hostname=None):
+        self.pid = pid
+        self.fname = fname
+        self.since = since
+        self.hostname = hostname
+        super().__init__(msg)
+def file_locked(lock_dir, file=None, fmt=None, ignore_invalid=False, ignore_races=True):
+    def decorator(fn):
+        if lock_dir is None:
+            return fn
+        from functools import wraps
+        import socket
+        hostname = socket.gethostname()
+        pid = os.getpid()
+        def lock(fname):
+            found = False
+            try:
+                with open(fname, 'r') as fid:
+                    data = fid.read()
+                found = True
+            except OSError: pass
+            cur_pid = cur_host = cur_date = None
+            try:
+                valid = False
+                cur_pid, cur_host, cur_date = data.split('\n')
+                cur_pid = int(cur_pid)
+                cur_date = datetime.datetime.fromisoformat(cur_date)
+                valid = True
+            except Exception: pass
+            if found:
+                if valid or not ignore_invalid:
+                    if valid:
+                        td = datetime.datetime.now() - cur_date
+                        smsg = f'Lock found by pid {cur_pid} at host {cur_host} since {td}'
+                    else:
+                        smsg = 'Invalid lock'
+                    raise LockedException(f'{smsg} at file {fname}.', fname=fname, pid=cur_pid, since=cur_date, hostname=cur_host)
+            with open(fname, 'w+') as fid:
+                fid.write(f'{pid}\n{hostname}\n{datetime.datetime.now()}')
+        def unlock(fname):
+            try:
+                os.unlink(fname)
+            except FileNotFoundError:
+                if not ignore_races: raise
+        get_file = _make_file_getter(fn, file, fmt)
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            fname = get_file(*args, **kwargs)
+            path = os.path.join(lock_dir, fname)
+            try:
+                must_unlock = False
+                lock(path)
+                must_unlock = True
+                data = fn(*args, **kwargs)
+            except LockedException:
+                must_unlock = False
+                raise
+            finally:
+                if must_unlock:
+                    unlock(path)
+            return data
+        return wrapper
+    return decorator
 
 
 
