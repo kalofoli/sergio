@@ -252,7 +252,7 @@ class FileObjectCache(CacheMixinFile, ObjectCache): pass
 DEFAULT_FILE_CACHE = FileObjectCache()
 
 class ValueCache(dict):
-    
+    __slots__ = ('_enabled',)
     class Attributes:
 
         def __init__(self, cache: 'ValueCache') -> None:
@@ -285,10 +285,14 @@ class ValueCache(dict):
             except KeyError as e:
                 raise AttributeError()
     
-    def __init__(self, *args, enabled=True, **kwargs):
+    def __new__(cls, *args, enabled=True, **kwargs):
+        self = dict.__new__(cls, *args, **kwargs)
         self._enabled = enabled
-        super(ValueCache, self).__init__(*args, **kwargs)
-        self._attributes = ValueCache.Attributes(self)
+        return self
+    # def __init__(self, *args, enabled=True, **kwargs):
+    #     self._enabled = enabled
+    #     super(ValueCache, self).__init__(*args, **kwargs)
+    #     self._attributes = ValueCache.Attributes(self)
     
     def __setitem__(self, *args, **kwargs):
         if self._enabled:
@@ -296,7 +300,7 @@ class ValueCache(dict):
     
     @property
     def a(self):
-        return self._attributes
+        return self.Attributes(self)
     
     @property
     def enabled(self) -> bool:
@@ -334,6 +338,9 @@ class ValueCache(dict):
         else:
             raise KeyError(key)
 
+    def __eq__(self, other):
+        
+        return isinstance(other, self.__class__)
     @classmethod
     def cached_property(cls, value_getter):
         name = value_getter.__name__
